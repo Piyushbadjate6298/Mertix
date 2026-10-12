@@ -1,0 +1,6 @@
+import React,{createContext,useContext,useEffect,useState} from 'react';import {api} from '../lib/api';
+const C=createContext();export const useAuth=()=>useContext(C);
+export function AuthProvider({children}){const [token,setToken]=useState(()=>sessionStorage.getItem('meritx_token')||'');const[user,setUser]=useState(()=>{try{return JSON.parse(sessionStorage.getItem('meritx_user'))}catch{return null}});const[loading,setLoading]=useState(false);
+useEffect(()=>{if(!token)return;api('/auth/me',{token}).then(d=>setUser(d.user)).catch(()=>{setToken('');setUser(null);sessionStorage.removeItem('meritx_token');sessionStorage.removeItem('meritx_user')})},[token]);
+const login=async(email,password)=>{setLoading(true);try{const data=await api('/auth/login',{method:'POST',body:{email,password}});setToken(data.token);setUser(data.user);sessionStorage.setItem('meritx_token',data.token);sessionStorage.setItem('meritx_user',JSON.stringify(data.user));return data.user;}finally{setLoading(false)}};
+const logout=()=>{setToken('');setUser(null);sessionStorage.removeItem('meritx_token');sessionStorage.removeItem('meritx_user')};return <C.Provider value={{user,token,loading,login,logout}}>{children}</C.Provider>}
