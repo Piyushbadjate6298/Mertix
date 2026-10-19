@@ -1,1 +1,67 @@
-.brand{display:flex;align-items:center;gap:10px;white-space:nowrap}.brand-icon{width:44px;height:44px;display:grid;place-items:center}.brand-icon svg{width:100%;height:100%}.brand-words{display:flex;flex-direction:column;gap:2px;font-size:14px;font-weight:900;letter-spacing:-.035em;color:#1754f2}.brand-words strong{color:#153057;font-weight:900}.brand-words small{font-size:8.6px;letter-spacing:.17em;font-weight:800;color:#8192ae}.brand.compact .brand-icon{width:35px;height:35px}.brand.compact .brand-words{font-size:12px}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.brand-logo-mark {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(34, 117, 255, 0.22));
+  transition: transform 0.2s ease;
+}
+.brand:hover .brand-logo-mark {
+  transform: scale(1.05);
+}
+.brand-words {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: #171d39;
+}
+.brand-words > span {
+  font-family: Manrope, sans-serif;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+}
+.brand-words > span > span {
+  color: #2b59ff;
+}
+.brand-words small {
+  color: #8b94aa;
+  font-size: 7.5px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+.brand.compact .brand-icon {
+  width: 34px;
+  height: 34px;
+}
+.brand.compact .brand-words > span {
+  font-size: 16px;
+}
+.brand.compact .brand-words small {
+  display: none;
+}
+.brand-logo-full {
+  height: 52px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 4px 10px rgba(34, 117, 255, 0.15));
+}
+.brand.compact .brand-logo-full {
+  height: 38px;
+}
+

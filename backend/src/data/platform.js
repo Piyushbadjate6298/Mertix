@@ -1,0 +1,25 @@
+export const exams = [
+  { id: 'jee-main-01', title: 'JEE Main Grand Mock 01', type: 'JEE Main', subject: 'Physics · Chemistry · Mathematics', date: '2026-11-15', time: '10:00 AM', duration: 180, questions: 75, marks: 300, fee: 99, registered: 2486, prize: 25000, tag: 'Most popular', description: 'A national-level JEE Main simulation with detailed scoring and analytics.', syllabus: 'Class 11 & 12 PCM', status: 'upcoming' },
+  { id: 'neet-01', title: 'NEET UG All India Test 01', type: 'NEET UG', subject: 'Physics · Chemistry · Biology', date: '2026-11-22', time: '02:00 PM', duration: 180, questions: 180, marks: 720, fee: 149, registered: 3912, prize: 40000, tag: 'Trending', description: 'Practice NEET fundamentals with a national benchmark.', syllabus: 'Class 11 & 12 PCB', status: 'upcoming' },
+  { id: 'jee-advanced-01', title: 'JEE Advanced Challenge', type: 'JEE Advanced', subject: 'Physics · Chemistry · Mathematics', date: '2026-12-06', time: '09:00 AM', duration: 180, questions: 54, marks: 216, fee: 129, registered: 1240, prize: 18000, tag: 'Advanced', description: 'Higher difficulty challenge for advanced aspirants.', syllabus: 'Advanced PCM topics', status: 'upcoming' },
+  { id: 'neet-biology-01', title: 'NEET Biology Sprint', type: 'NEET UG', subject: 'Botany · Zoology', date: '2026-12-13', time: '11:00 AM', duration: 90, questions: 45, marks: 180, fee: 0, registered: 1890, prize: 0, tag: 'Free', description: 'Focused high-yield biology practice.', syllabus: 'Botany and Zoology', status: 'upcoming' },
+];
+
+export const questions = [
+  { id: 1, subject: 'Physics', chapter: 'Mechanics', difficulty: 'Medium', text: 'A body starts from rest and accelerates uniformly at 2 m/s². What distance does it cover in 5 seconds?', options: ['10 m', '20 m', '25 m', '50 m'], answer: 2, explanation: 's = ut + ½at² = 0 + ½ × 2 × 25 = 25 m.' },
+  { id: 2, subject: 'Physics', chapter: 'Electricity', difficulty: 'Easy', text: 'What is the SI unit of electric resistance?', options: ['Ampere', 'Volt', 'Ohm', 'Watt'], answer: 2, explanation: 'Electrical resistance is measured in ohms (Ω).' },
+  { id: 3, subject: 'Chemistry', chapter: 'Atomic Structure', difficulty: 'Easy', text: 'The atomic number of carbon is:', options: ['12', '8', '6', '14'], answer: 2, explanation: 'Carbon has six protons, therefore atomic number 6.' },
+  { id: 4, subject: 'Chemistry', chapter: 'Periodic Table', difficulty: 'Medium', text: 'Which element has the highest electronegativity?', options: ['Oxygen', 'Chlorine', 'Fluorine', 'Nitrogen'], answer: 2, explanation: 'Fluorine has the highest electronegativity on the Pauling scale.' },
+  { id: 5, subject: 'Mathematics', chapter: 'Calculus', difficulty: 'Easy', text: 'If f(x) = x³ + 2x, what is f′(x)?', options: ['3x² + 2', 'x² + 2', '3x + 2', '3x²'], answer: 0, explanation: 'Differentiate term by term: d(x³)/dx = 3x² and d(2x)/dx = 2.' },
+  { id: 6, subject: 'Mathematics', chapter: 'Algebra', difficulty: 'Medium', text: 'The roots of x² − 5x + 6 = 0 are:', options: ['1 and 6', '−2 and −3', '2 and 3', '−1 and −6'], answer: 2, explanation: 'Factorization gives (x − 2)(x − 3) = 0.' },
+  { id: 7, subject: 'Biology', chapter: 'Cell Biology', difficulty: 'Easy', text: 'Which organelle is called the powerhouse of the cell?', options: ['Ribosome', 'Mitochondrion', 'Nucleus', 'Golgi apparatus'], answer: 1, explanation: 'Mitochondria generate most of the cell’s ATP through cellular respiration.' },
+  { id: 8, subject: 'Biology', chapter: 'Human Physiology', difficulty: 'Medium', text: 'Which part of the nephron is mainly responsible for ultrafiltration?', options: ['Loop of Henle', 'Collecting duct', 'Glomerulus', 'Distal tubule'], answer: 2, explanation: 'Blood is filtered in the glomerulus into Bowman’s capsule.' },
+  { id: 9, subject: 'Physics', chapter: 'Optics', difficulty: 'Easy', text: 'The speed of light in vacuum is approximately:', options: ['3 × 10⁶ m/s', '3 × 10⁸ m/s', '3 × 10⁵ m/s', '3 × 10¹⁰ m/s'], answer: 1, explanation: 'The speed of light in vacuum is approximately 3 × 10⁸ m/s.' },
+  { id: 10, subject: 'Chemistry', chapter: 'Organic Chemistry', difficulty: 'Easy', text: 'The functional group present in ethanol is:', options: ['Carboxyl', 'Aldehyde', 'Hydroxyl', 'Ketone'], answer: 2, explanation: 'Ethanol is an alcohol and has an –OH hydroxyl group.' },
+  { id: 11, subject: 'Mathematics', chapter: 'Trigonometry', difficulty: 'Easy', text: 'What is the value of sin²θ + cos²θ?', options: ['0', '1', '2', 'Depends on θ'], answer: 1, explanation: 'The fundamental Pythagorean trigonometric identity equals 1.' },
+  { id: 12, subject: 'Biology', chapter: 'Genetics', difficulty: 'Easy', text: 'In DNA, adenine pairs with which nitrogenous base?', options: ['Guanine', 'Cytosine', 'Thymine', 'Uracil'], answer: 2, explanation: 'Adenine pairs with thymine in DNA via two hydrogen bonds.' },
+];
+
+export function questionsForExam(exam) {
+  return questions.filter((question) => exam.type.startsWith('NEET') ? question.subject !== 'Mathematics' : question.subject !== 'Biology');
+}

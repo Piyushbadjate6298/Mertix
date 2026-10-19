@@ -1,3 +1,72 @@
-import React from 'react';import {Link} from 'react-router-dom';import {ArrowRight,ArrowUpRight,Target,TrendingUp,Trophy,ShieldCheck,BookOpen,BarChart3,Clock3,Users,CheckCircle2,Star,Play,ChevronRight,Zap,Award} from 'lucide-react';import {SiteHeader,SiteFooter} from '../../components/Layouts';import './Home.css';
-const features=[{icon:Target,title:'Exam-real experience',text:'Practice in an environment designed around real competitive tests.'},{icon:Trophy,title:'National leaderboards',text:'Find out how you perform against aspirants across India.'},{icon:BarChart3,title:'Actionable analytics',text:'Go beyond your marks with subject and topic-wise performance.'},{icon:ShieldCheck,title:'Fair competition',text:'Timed submissions, server evaluation and transparent results.'}];
-export default function Home(){return <><SiteHeader/><div className="home"><div className="announcement"> <span>NEW</span> Your competitive edge starts here <ChevronRight size={14}/></div><section className="hero"><div className="container hero-grid"><div className="hero-copy"><div className="hero-label"><span className="hero-label-dot"/> INDIA'S NEXT-GEN EXAM PLATFORM</div><h1>Your ambition.<br/>Our platform.<br/><span className="gradient-text">Limitless potential.</span></h1><p>More than a mock test. Experience real exam pressure, compete with aspirants nationwide, and turn every attempt into a measurable breakthrough.</p><div className="hero-actions"><Link className="btn btn-primary" to="/exams">Explore Mock Tests <ArrowUpRight size={17}/></Link><Link className="btn btn-outline" to="/login"><Play size={15} fill="currentColor"/> Try the Demo</Link></div><div className="hero-trust"><div className="avatar-stack"><i>AS</i><i>RM</i><i>PK</i><i>+</i></div><div><div className="stars">★★★★★ <span>Built for serious aspirants</span></div><small>JEE Main · JEE Advanced · NEET UG</small></div></div></div><div className="hero-art"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="floating-card rank-float"><span className="float-icon"><Trophy size={18}/></span><div><small>YOUR NATIONAL RANK</small><strong># 128 <span>↗ Top 5%</span></strong></div></div><div className="preview-card"><div className="preview-top"><div className="preview-dots"><i/><i/><i/></div><span>LIVE PERFORMANCE PREVIEW</span><span className="preview-live">● LIVE</span></div><div className="preview-in"><div className="preview-greeting">Your preparation, visualized ✦</div><div className="preview-header"><div><small>OVERALL PERFORMANCE</small><strong>84.6<span>%</span></strong><p>↑ 12.8% from last test</p></div><div className="score-ring"><span>84%</span><small>Accuracy</small></div></div><div className="preview-bars"><div><span>Physics</span><b><i style={{width:'76%'}}/></b><strong>76%</strong></div><div><span>Chemistry</span><b><i style={{width:'91%'}}/></b><strong>91%</strong></div><div><span>Mathematics</span><b><i style={{width:'84%'}}/></b><strong>84%</strong></div></div><div className="preview-bottom"><span><CheckCircle2 size={15}/> Test completed</span><span>View Analysis <ArrowRight size={14}/></span></div></div></div><div className="floating-card students-float"><div className="round-bolt"><Zap size={19}/></div><div><strong>+24.8%</strong><small>Performance growth</small></div></div><div className="hero-spark">✦</div></div></div></section><div className="trusted"><div className="container trusted-inner"><span>BUILT FOR INDIA'S MOST AMBITIOUS ASPIRANTS</span><div>JEE MAIN <span>✦</span> JEE ADVANCED <span>✦</span> NEET UG</div></div></div><section className="landing-section" id="why-meritx"><div className="container"><div className="section-center"><span className="eyebrow">THE MERITX ADVANTAGE</span><h2 className="section-title">Don't just practice. <span className="gradient-text">Get ahead.</span></h2><p className="section-sub">Everything you need to move from preparation to peak performance, in one beautifully simple experience.</p></div><div className="feature-grid">{features.map(({icon:Icon,title,text},i)=><div className="feature-tile" key={title}><div className={'feature-icon color-'+i}><Icon size={25}/></div><h3>{title}</h3><p>{text}</p><span className="feature-number">0{i+1}</span></div>)}</div></div></section><section className="exams-promo"><div className="container promo-grid"><div><span className="eyebrow">MADE FOR YOUR BIGGEST GOALS</span><h2 className="section-title">One platform.<br/><span className="gradient-text">Every breakthrough.</span></h2><p className="section-sub">Whether you're working towards a top engineering college or your medical dream, there's a challenge built for you.</p><Link className="btn btn-primary" to="/exams">View All Mock Tests <ArrowRight size={17}/></Link></div><div className="promo-cards"><Link to="/exams" className="promo-card"><span className="promo-icon">∑</span><small>ENGINEERING ENTRANCE</small><h3>JEE Main & Advanced</h3><p>Physics · Chemistry · Mathematics</p><span>Explore JEE Tests <ArrowUpRight size={16}/></span></Link><Link to="/exams" className="promo-card neet"><span className="promo-icon">✚</span><small>MEDICAL ENTRANCE</small><h3>NEET UG</h3><p>Physics · Chemistry · Biology</p><span>Explore NEET Tests <ArrowUpRight size={16}/></span></Link></div></div></section><section className="landing-section" id="how-it-works"><div className="container"><div className="section-center"><span className="eyebrow">YOUR SUCCESS JOURNEY</span><h2 className="section-title">Three steps. <span className="gradient-text">Stronger every day.</span></h2></div><div className="steps-grid">{[[BookOpen,'01','Choose your challenge','Find a JEE or NEET mock test matched to your goal.'],[Clock3,'02','Compete with confidence','Take a timed, realistic examination with auto-save.'],[TrendingUp,'03','Analyze & rise','Get instant feedback, insights and benchmark your progress.']].map(([Icon,no,title,text])=><div className="step-card" key={no}><div className="step-illustration"><Icon size={36}/></div><span>STEP {no}</span><h3>{title}</h3><p>{text}</p></div>)}</div></div></section><section className="bottom-cta"><div className="container"><div className="cta-panel"><div className="cta-pattern">✦</div><span>YOUR NEXT CHAPTER STARTS HERE</span><h2>Great ranks start with<br/>great preparation.</h2><p>Practice smarter. Compete better. Rise higher.</p><Link className="btn btn-white" to="/register">Start Your Journey <ArrowUpRight size={16}/></Link></div></div></section></div><SiteFooter/></>}
+import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, BrainCircuit, CheckCircle2, ChevronDown, FlaskConical, GraduationCap, LineChart, ShieldCheck, Target, Trophy } from 'lucide-react';
+import { SiteFooter, SiteHeader } from '../../components/Layouts';
+import { ExamCard } from './Exams';
+import { exams } from '../../data/platform';
+import sliderUpsc from '../../assets/Images/Sliders/8-display.jpg';
+import sliderNeet from '../../assets/Images/Sliders/9-display.jpg';
+import './Home.css';
+
+const slides = [
+  { image: sliderUpsc, alt: 'UPSC CSE Parivartan Mentorship Programme for integrated prelims and mains preparation', href: '/exams' },
+  { image: sliderNeet, alt: 'NEET Biology Sprint for biology revision, NCERT concepts, and high-yield topics', href: '/exams/neet-biology-01' },
+];
+
+const features = [
+  { icon: Target, title: 'Exam-real practice', text: 'Timed mock exams help you rehearse decisions, pacing, and focus.' },
+  { icon: LineChart, title: 'Clear performance review', text: 'See accuracy, score, and answer explanations after each attempt.' },
+  { icon: BrainCircuit, title: 'Focused question bank', text: 'Practice the existing JEE and NEET sample questions by subject.' },
+  { icon: ShieldCheck, title: 'Transparent demo', text: 'Securely stored practice data, with no real payments or false promises.' },
+];
+
+export default function Home() {
+  const [active, setActive] = useState(0);
+  const touchStart = useRef(null);
+  const change = (next) => setActive((next + slides.length) % slides.length);
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const timer = window.setInterval(() => setActive((current) => (current + 1) % slides.length), 6000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const slide = slides[active];
+  return <><SiteHeader/><main className="home">
+    <section
+      className="banner-carousel"
+      aria-roledescription="carousel"
+      aria-label="Meritx course highlights"
+      aria-live="polite"
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowLeft') change(active - 1);
+        if (event.key === 'ArrowRight') change(active + 1);
+      }}
+      onTouchStart={(event) => { touchStart.current = event.touches[0].clientX; }}
+      onTouchEnd={(event) => {
+        const distance = event.changedTouches[0].clientX - touchStart.current;
+        if (Math.abs(distance) > 45) change(active + (distance < 0 ? 1 : -1));
+      }}
+      tabIndex="0"
+    >
+      <div className="banner-stage">
+        <Link className="banner-link" to={slide.href} aria-label={`${slide.alt}. Open course details.`} key={slide.image}>
+          <img src={slide.image} alt={slide.alt}/>
+        </Link>
+        <button className="banner-arrow banner-prev" type="button" onClick={() => change(active - 1)} aria-label="Previous slide"><ArrowLeft/></button>
+        <button className="banner-arrow banner-next" type="button" onClick={() => change(active + 1)} aria-label="Next slide"><ArrowRight/></button>
+        <div className="banner-dots" aria-label="Choose a slide">{slides.map((item, index) => <button type="button" key={item.image} className={index === active ? 'active' : ''} onClick={() => setActive(index)} aria-label={`Show slide ${index + 1}`} aria-current={index === active ? 'true' : undefined}/>)}</div>
+      </div>
+    </section>
+
+    <section className="category-strip" aria-label="Course categories"><div className="container category-grid">{[[GraduationCap, 'JEE Main'], [Trophy, 'JEE Advanced'], [FlaskConical, 'NEET UG'], [BookOpen, 'Question Bank']].map(([Icon, label]) => <Link to="/exams" key={label}><span><Icon/></span><div><small>EXPLORE</small><strong>{label}</strong></div><ArrowUpRight className="category-arrow"/></Link>)}</div></section>
+
+    <section className="home-section courses-section" id="courses"><div className="container"><div className="section-heading"><div><span className="section-kicker">POPULAR COURSES</span><h2>Choose your next challenge</h2><p>Explore the four exam experiences already available in Meritx.</p></div><Link className="section-link" to="/exams">Explore all courses <ArrowRight size={16}/></Link></div><div className="home-course-grid">{exams.map((exam) => <ExamCard exam={exam} key={exam.id}/>)}</div></div></section>
+
+    <section className="home-section benefits-section" id="about"><div className="container"><div className="section-heading centered"><div><span className="section-kicker">WHY MERITX</span><h2>Everything important, nothing distracting.</h2><p>A straightforward learning experience shaped around practice and reflection.</p></div></div><div className="benefit-grid">{features.map(({ icon: Icon, title, text }) => <article key={title}><span><Icon/></span><h3>{title}</h3><p>{text}</p></article>)}</div></div></section>
+
+    <section className="learning-band"><div className="container learning-band-grid"><div><span className="section-kicker light">LEARN ANYWHERE</span><h2>Your preparation space, always within reach.</h2><p>Browse courses, use demo accounts, attempt the existing sample exams, and review your progress across sessions.</p><div className="band-checks"><span><CheckCircle2/> Responsive on every screen</span><span><CheckCircle2/> Progress stored securely</span></div><Link className="btn btn-light" to="/register">Create your profile <ArrowUpRight size={16}/></Link></div><div className="device-art" aria-hidden="true"><div className="device-laptop"><div><span/><span/><span/></div><main><aside/><section><small>MERITX</small><strong>Learn. Practice. Rise.</strong><i/><i/></section></main></div><div className="device-phone"><span/><main><b>84%</b><small>Accuracy</small><i/><i/><i/></main></div></div></div></section>
+
+    <section className="home-section faq-section" id="contact"><div className="container faq-grid"><div><span className="section-kicker">GOOD TO KNOW</span><h2>Built as a transparent learning demo.</h2><p>Profiles and practice progress are stored in the configured MERITX database. Payments, live ranking, and payouts are not enabled.</p><Link className="section-link" to="/login">Explore a demo account <ArrowRight size={16}/></Link></div><div className="faq-list">{['How is my progress saved?', 'Are payments or prizes active?', 'Can I try the exam flow?'].map((question, index) => <details key={question} open={index === 0}><summary>{question}<ChevronDown/></summary><p>{index === 0 ? 'Your account, registrations, attempts, and support requests are stored by the secure MERITX API.' : index === 1 ? 'No. Any fee or prize information belongs to the original demo data and is clearly presented as illustrative.' : 'Yes. Use the student demo account, register for an exam, and complete the sample test.'}</p></details>)}</div></div></section>
+  </main><SiteFooter/></>;
+}

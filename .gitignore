@@ -1,5 +1,8 @@
-node_modules/
-dist/
-.env
+**/node_modules/
+**/dist/
+**/.env
+**/.env.local
+*.log
+.vercel/
 .DS_Store
-backend/data/store.json
+Thumbs.db

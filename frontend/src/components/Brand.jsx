@@ -1,2 +1,27 @@
-import React from 'react';import './Brand.css';
-export default function Brand({compact=false}){return <div className={'brand '+(compact?'compact':'')}><div className="brand-icon"><svg viewBox="0 0 55 55" fill="none" aria-hidden="true"><path d="M4 17h9l11 22 8-14-10-13 8-9 12 21-7 8-7-12-4 6 8 12-9 15L4 17Z" fill="url(#g)"/><path d="M45 17h8L38 45l-5-9 12-19Z" fill="url(#g2)"/><defs><linearGradient id="g" x1="1" y1="29" x2="44" y2="22"><stop stopColor="#16DDEA"/><stop offset=".6" stopColor="#1575FF"/><stop offset="1" stopColor="#2426DC"/></linearGradient><linearGradient id="g2" x1="33" y1="38" x2="53" y2="18"><stop stopColor="#06DAD9"/><stop offset="1" stopColor="#2137F7"/></linearGradient></defs></svg></div><div className="brand-words"><span>LGW <strong>DIGITAL HUB</strong></span>{!compact&&<small>MERITX · COMPETE. PERFORM. RISE.</small>}</div></div>}
+import React from 'react';
+import logoMark from '../assets/logo-mark.png';
+import logoFull from '../assets/Logo.png';
+import './Brand.css';
+
+export default function Brand({ compact = false, full = false }) {
+  if (full) {
+    return (
+      <div className={`brand brand-full ${compact ? 'compact' : ''}`} aria-label="Meritx home">
+        <img src={logoFull} alt="SW Meritx" className="brand-logo-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`brand ${compact ? 'compact' : ''}`} aria-label="Meritx home">
+      <div className="brand-icon">
+        <img src={logoMark} alt="Meritx" className="brand-logo-mark" />
+      </div>
+      <div className="brand-words">
+        <span>Merit<span>x</span></span>
+        {!compact && <small>LEARN · PRACTICE · RISE</small>}
+      </div>
+    </div>
+  );
+}
+

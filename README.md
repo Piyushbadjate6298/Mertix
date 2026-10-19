@@ -1,115 +1,157 @@
-# LGW MERITX — Compete. Perform. Rise.
+# MERITX — Learn. Practice. Rise.
 
-A **full-stack runnable demonstration** of a competitive JEE / NEET mock examination web platform for LGW Digital Hub. React + Vite frontend and a **Node.js built-in HTTP API** backend. Branded with a blue / cyan / white theme inspired by the supplied logo reference. The supplied original logo reference is included at `frontend/src/assets/reference-logo.jpg`; the interface uses a clean, custom SVG-style LGW icon and the changed LGW DIGITAL HUB wordmark.
+MERITX is a React/Vite educational practice experience with a separate Express/PostgreSQL API. The frontend and backend are independently deployable to Vercel and Render.
 
-## Quick start
+## Repository audit
 
-**Prerequisites:** Node.js 20.19+ (Node 22 recommended), npm, internet connection for first frontend dependency installation.
+- The project contains `frontend` and `backend` applications; there is no separate `content` directory.
+- Website content is currently defined in `frontend/src/data/platform.js` and mirrored server-side in `backend/src/data/platform.js` for the demo exam catalogue and representative questions.
+- Image assets are under `frontend/src/assets`, including two homepage sliders, seven supplied course images, optimized display derivatives for the four matched course routes, and MERITX logos.
+- Submitting workflows found in the UI: account registration/login, exam registration, attempt start/save/submit, learner support, teacher paper submission, paper approval, and exam-status updates.
+- No public contact, admission enquiry, or newsletter form currently exists, so unused public lead endpoints were intentionally not invented.
 
-Terminal 1:
+## Structure
 
-```bash
-cd backend
-npm start
+```text
+LGW-MERITX/
+  backend/
+    migrations/001_init.sql
+    src/
+      config/
+      controllers/
+      data/
+      middleware/
+      routes/
+      scripts/
+      services/
+      utils/
+      app.js
+      server.js
+    tests/
+    .env.example
+    package.json
+  frontend/
+    public/
+    src/
+      assets/
+      components/
+      context/
+      data/
+      lib/
+      pages/
+    .env.example
+    vercel.json
+    package.json
+  render.yaml
 ```
 
-Terminal 2:
+## Environment variables
 
-```bash
-cd frontend
+Frontend (`frontend/.env`):
+
+- `VITE_API_BASE_URL`: backend origin, without `/api`; locally `http://localhost:5000`.
+- `VITE_WHATSAPP_NUMBER`: business WhatsApp number with country code and digits only. The floating button is hidden until a valid number is configured.
+- `VITE_WHATSAPP_MESSAGE`: optional prefilled message.
+
+Backend (`backend/.env`):
+
+- `DATABASE_URL`: PostgreSQL connection string.
+- `DATABASE_SSL`: `true` for managed production PostgreSQL when required.
+- `JWT_SECRET`: minimum 32-character signing secret.
+- `FRONTEND_URLS`: comma-separated explicit CORS allowlist.
+- `SEED_DEMO_USERS`: `true` only for local/demo environments.
+- SMTP variables documented in `backend/.env.example` are optional.
+
+Never commit `.env` files. Vite variables are public browser configuration and must never contain database, JWT, or email secrets.
+
+## Windows local development
+
+Requirements: Node.js 20.19+ and PostgreSQL 14+ or a managed PostgreSQL URL.
+
+Terminal 1 — API:
+
+```powershell
+cd "F:\SW PROJECT\4.in_house\Meritx_project\New folder\Meritx Pro\LGW-MERITX\backend"
 npm install
+Copy-Item .env.example .env
+# Edit DATABASE_URL and JWT_SECRET in .env
+npm run db:migrate
 npm run dev
 ```
 
-Open **http://localhost:5173** in your browser. API health: **http://localhost:4000/api/health**.
+Terminal 2 — frontend:
 
-To build the frontend for deployment: `cd frontend && npm run build`. It creates `frontend/dist`. You must deploy the backend separately on a Node.js host with persistent storage and set `VITE_API_URL` during the frontend build.
-
-## Demo login credentials
-
-| Role | Email / username | Password | Dashboard |
-|---|---|---|---|
-| Student | `student@meritx.demo` | `Student@123` | `/student` |
-| Teacher | `teacher@meritx.demo` | `Teacher@123` | `/teacher` |
-| Admin | `admin@meritx.demo` | `Admin@123` | `/admin` |
-| Super Admin | `superadmin@meritx.demo` | `Super@123` | `/superadmin` |
-
-All role logins are on the **same** `/login` page. Click a demo role button to prefill credentials. These passwords are **only for local demonstrations**; never deploy these fixed accounts to production.
-
-## Test exam flow
-
-1. Sign in as student.
-2. Open Explore Exams and click a JEE or NEET card.
-3. Agree to the demo rules, click **Register for Demo**. **No actual money is charged.**
-4. Click **Start Demo Exam**. There is a **12-minute sample session** with representative MCQs, not the full official 180-minute test.
-5. Select choices, use Save & Next, Mark for Review, Clear Response, or question palette. Answers auto-save to the backend after a short pause.
-6. Submit (or wait for automatic expiry). Receive your evaluated score and explanations. Visit My Results to see all submissions.
-7. Log in as teacher, create a paper metadata submission. Log in as admin to approve the paper.
-8. Register additional exams and view simulated collections with the super-admin login.
-
-## Folder structure
-
-```
-LGW-MERITX/
-  frontend/
-    index.html
-    package.json
-    .env.example
-    src/
-      assets/reference-logo.jpg
-      components/Brand.jsx, Brand.css, Layouts.jsx, Layouts.css
-      context/AuthContext.jsx
-      lib/api.js
-      pages/
-        public/Home.jsx, Home.css, Exams.jsx, Exams.css, ExamDetails.jsx
-        auth/Auth.jsx, Auth.css
-        student/Student.jsx, Student.css
-        exam/Exam.jsx, Exam.css
-        teacher/Teacher.jsx, Teacher.css
-        admin/Admin.jsx, Admin.css
-        superadmin/Finance.jsx, Finance.css
-      App.jsx
-      main.jsx
-      index.css
-  backend/
-    src/data.js
-    src/store.js
-    src/engine.js
-    src/server.js
-    data/ (JSON demo persistence)
-    tests/engine.test.js
-    package.json
-    .env.example
+```powershell
+cd "F:\SW PROJECT\4.in_house\Meritx_project\New folder\Meritx Pro\LGW-MERITX\frontend"
+npm install
+Copy-Item .env.example .env
+# Set VITE_API_BASE_URL and VITE_WHATSAPP_NUMBER
+npm run dev
 ```
 
-## What works in the demo
+Vite normally serves `http://localhost:5173`; the API defaults to `http://localhost:5000`. If Vite selects another port, add that exact origin to `FRONTEND_URLS`.
 
-- Responsive marketing site, exam browsing / filtering, details and exam rules.
-- Role-based sign-in and self-service student registration; session token, hashed demo passwords.
-- Server-persisted student registrations with simulated payment records.
-- Sample JEE / NEET single-choice MCQs and metadata.
-- Server-based exam start time, 12-minute timer, answer auto-saving, review marks, one attempt per student/exam, idempotency guard at submission, scoring (+4 / −1), explanations, persisted results.
-- Student dashboard, results, wallet/rewards *information-only* page, and support ticket submission.
-- Teacher sample question bank and paper-submission workflow.
-- Admin overview, users, exam publication state, paper review, support tickets, audit trail.
-- Super admin illustrative collection, 60/40 projection, transactions and audits.
-- Backend automated scoring and access-rule tests.
+## API endpoints
 
-## Scope and production gaps — IMPORTANT
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/health` | API and database readiness |
+| POST | `/api/auth/register` | Create a student account |
+| POST | `/api/auth/login` | Authenticate and issue an expiring JWT |
+| GET | `/api/auth/me` | Restore the authenticated profile |
+| GET | `/api/exams` | Public exam catalogue |
+| GET | `/api/questions?examId=...` | Role-aware sample questions |
+| GET | `/api/me/dashboard` | Student registrations and attempts |
+| POST | `/api/exams/register` | Persist an illustrative exam registration |
+| POST | `/api/attempts/start` | Start or resume an attempt |
+| POST | `/api/attempts/save` | Save answers and marked questions |
+| POST | `/api/attempts/submit` | Evaluate and persist an attempt |
+| GET/POST | `/api/teacher/papers` | List or submit paper metadata |
+| GET | `/api/admin/overview` | Protected operational overview |
+| POST | `/api/admin/papers/approve` | Protected paper approval |
+| PATCH | `/api/admin/exam` | Protected exam publication status |
+| POST | `/api/support` | Persist an authenticated support request |
+| GET | `/api/admin/tickets` | Protected support queue |
 
-**This is a demo/prototype, not a production-ready examination, payment, or payout service.** Live payments, actual ranking across multiple participants, genuine national leaderboards, full JEE/NEET paper lengths, a complete question builder and random generator, certificates, real notifications, refunds, wallet credits, payouts/KYC, revenue settlement, anti-cheat enforcement and true remote proctoring are not implemented. The visible exam safeguards include tab visibility counts, but these are not reliable proctoring or fraud prevention.
+No endpoint exposes raw password hashes or an unrestricted list of private lead records.
 
-The backend uses **a JSON file and in-memory login sessions** instead of a robust production database/session store. It has no rate limiting, OTP/email validation, CSRF controls, password reset, database transactions, concurrency-safe wallet ledger, durable session storage, or trusted exam-time synchronization mechanism. Deploying publicly requires security hardening, a real DB (PostgreSQL recommended), guarded transactions, an email/SMS provider, server-side validated payment callbacks, production authentication, data protection, proper academic paper validation and load testing. Guard against malicious clients and duplicate requests. The sample question bank is intentionally short and may not be suitable as a real exam.
+## Vercel frontend deployment
 
-**Legal/compliance:** Paid entry, monetary rewards, payout wallets and minor KYC/withdrawals may implicate specific Indian laws and regulations. Do not activate or market real cash prizes or paid competitions before receiving qualified legal advice and obtaining the necessary service-provider approvals. Do not claim NTA / JEE / NEET affiliation. Webcam or screen monitoring requires separate consent/privacy review.
+1. Import the repository into Vercel.
+2. Set Root Directory to `frontend`.
+3. Use `npm run build` and output directory `dist` (Vite is normally auto-detected).
+4. Add `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com`.
+5. Add the digits-only `VITE_WHATSAPP_NUMBER` and optional `VITE_WHATSAPP_MESSAGE`.
+6. Deploy. `frontend/vercel.json` rewrites client-side routes to `index.html` for direct refreshes.
+7. Add the final Vercel origin to Render's `FRONTEND_URLS` and redeploy/restart the API.
 
-## Tests
+Do not put `DATABASE_URL`, `JWT_SECRET`, or SMTP credentials in Vercel's Vite variables.
 
-```bash
+## Render backend deployment
+
+1. Create a managed PostgreSQL database in the same Render region as the API.
+2. Create a Blueprint from the repository's `render.yaml`, or create a Node Web Service manually.
+3. Confirm Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`, and health path `/api/health`.
+4. Set `DATABASE_URL` to the managed database's internal connection string.
+5. Set `FRONTEND_URLS` to the exact Vercel production origin and explicitly approved preview origins.
+6. Keep the generated strong `JWT_SECRET`; set `DATABASE_SSL=true` if required by the database provider.
+7. Configure optional SMTP settings and `SUPPORT_TO_EMAIL` if notifications are wanted.
+8. Deploy and verify `https://YOUR-RENDER-SERVICE.onrender.com/api/health` before setting the frontend API URL.
+
+The schema migration runs idempotently at startup. Production demo-account seeding is disabled in `render.yaml`.
+
+## Verification
+
+```powershell
 cd backend
 npm test
+
+cd ..\frontend
+npm run build
 ```
 
-## Branding
+The backend suite covers endpoint validation, health, CORS, safe database failures, email-provider failure after persistence, rate limiting, and scoring. A real PostgreSQL connection and SMTP delivery require credentials and must be verified in the target environment.
 
-LGW DIGITAL HUB is the top-left parent brand; LGW MERITX is the product. To replace the CSS/SVG approximation with a finalized official logo, edit `frontend/src/components/Brand.jsx` and `Brand.css`. The attached original SW DIGITAL HUB logo is retained **as a reference only**; its text is not mechanically modified in the source image.
+## Product boundaries
+
+Fees, rankings, prize pools, wallets, and payments remain illustrative. No real payment or payout provider is enabled. The question bank is representative and is not affiliated with NTA or IITs.
