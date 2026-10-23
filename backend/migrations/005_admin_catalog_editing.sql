@@ -1,0 +1,11 @@
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS title VARCHAR(180);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS exam_type VARCHAR(120);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS subject VARCHAR(300);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS exam_date DATE;
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS duration_minutes INTEGER CHECK (duration_minutes IS NULL OR duration_minutes BETWEEN 1 AND 720);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS fee NUMERIC(10,2) CHECK (fee IS NULL OR fee >= 0);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2) CHECK (discount_percent IS NULL OR discount_percent BETWEEN 0 AND 100);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS tag VARCHAR(80);
+ALTER TABLE exam_overrides ADD COLUMN IF NOT EXISTS registration_open BOOLEAN;

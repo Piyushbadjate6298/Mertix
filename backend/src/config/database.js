@@ -5,7 +5,7 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 
 const { Pool } = pg;
-const migrationPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../migrations/001_init.sql');
+const migrationsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../migrations');
 
 export function createDatabase(env) {
   const isRemote = env.databaseUrl && !env.databaseUrl.includes('localhost') && !env.databaseUrl.includes('127.0.0.1');
@@ -38,7 +38,10 @@ export function createDatabase(env) {
     },
     async initialize() {
       await pool.query('SELECT 1');
-      await pool.query(await fs.readFile(migrationPath, 'utf8'));
+      const migrations = (await fs.readdir(migrationsPath)).filter((name) => name.endsWith('.sql')).sort();
+      for (const migration of migrations) {
+        await pool.query(await fs.readFile(path.join(migrationsPath, migration), 'utf8'));
+      }
       if (env.seedDemoUsers) await seedDemoUsers(pool);
     },
     close: () => pool.end(),

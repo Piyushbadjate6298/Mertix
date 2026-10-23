@@ -5,7 +5,7 @@ MERITX is a React/Vite educational practice experience with a separate Express/P
 ## Repository audit
 
 - The project contains `frontend` and `backend` applications; there is no separate `content` directory.
-- Website content is currently defined in `frontend/src/data/platform.js` and mirrored server-side in `backend/src/data/platform.js` for the demo exam catalogue and representative questions.
+- The demo exam catalogue remains in `frontend/src/data/platform.js` and `backend/src/data/platform.js`; approved imported question banks are stored in PostgreSQL and override the representative questions for their assigned exam.
 - Image assets are under `frontend/src/assets`, including two homepage sliders, seven supplied course images, optimized display derivatives for the four matched course routes, and MERITX logos.
 - Submitting workflows found in the UI: account registration/login, exam registration, attempt start/save/submit, learner support, teacher paper submission, paper approval, and exam-status updates.
 - No public contact, admission enquiry, or newsletter form currently exists, so unused public lead endpoints were intentionally not invented.
@@ -16,6 +16,7 @@ MERITX is a React/Vite educational practice experience with a separate Express/P
 LGW-MERITX/
   backend/
     migrations/001_init.sql
+    migrations/002_question_banks.sql
     src/
       config/
       controllers/
@@ -107,13 +108,31 @@ Vite normally serves `http://localhost:5173`; the API defaults to `http://localh
 | POST | `/api/attempts/save` | Save answers and marked questions |
 | POST | `/api/attempts/submit` | Evaluate and persist an attempt |
 | GET/POST | `/api/teacher/papers` | List or submit paper metadata |
+| GET | `/api/teacher/question-banks` | List owned banks (or all banks for reviewers) |
+| GET | `/api/teacher/question-banks/:id` | Load a bank and its editable questions |
+| POST | `/api/teacher/question-banks/import` | Upload and extract one PDF/XLSX/XLS file (multipart `file`, 12 MB limit) |
+| PUT | `/api/teacher/question-banks/:id` | Save a validated draft revision |
+| POST | `/api/teacher/question-banks/submit` | Validate and submit a bank for approval |
 | GET | `/api/admin/overview` | Protected operational overview |
 | POST | `/api/admin/papers/approve` | Protected paper approval |
+| POST | `/api/admin/question-banks/approve` | Maker-checker approval and exam assignment |
+| POST | `/api/admin/question-banks/reject` | Reject a submitted bank with a reason |
+| POST | `/api/admin/question-banks/publish` | Atomically publish an approved bank as an examination |
 | PATCH | `/api/admin/exam` | Protected exam publication status |
 | POST | `/api/support` | Persist an authenticated support request |
 | GET | `/api/admin/tickets` | Protected support queue |
 
 No endpoint exposes raw password hashes or an unrestricted list of private lead records.
+
+## Question-bank import format
+
+Excel workbooks and CSV files may contain columns in any order. Recommended columns are `question_id`, `exam`, `subject`, `chapter`, `difficulty`, `question_type`, `question_text`, `option_a` through `option_d`, `correct_answers`, and `explanation`. Common case-insensitive aliases are recognized. Answers may be `B`, `Option B`, `A,C`, a one-based option number, or exact option text. PDF questions should be numbered, options should be labeled `A)`–`H)`, and answer lines should use `Answer: B`. Missing answers are never inferred; they are marked `Answer Required`.
+
+Inline LaTeX between `$...$` and display LaTeX between `$$...$$` render as MathML in both teacher preview and the live exam. Unicode superscripts, subscripts, chemical symbols, and ordinary text are preserved.
+
+Scanned PDFs are detected when little or no selectable text is available. The UI reports an OCR warning; this release does not bundle an OCR engine or an external AI/OCR credential. Convert scanned files to searchable PDFs before upload. Embedded PDF image extraction is also not enabled; diagrams can be supplied with an HTTPS `Image URL` Excel column.
+
+Migrations `002_question_banks.sql` and `003_examination_workflow.sql` add question banks, multi-answer questions, lifecycle/audit history, custom subjects, published examinations, and immutable per-attempt snapshots. Approved/published banks cannot be edited in place, and submitted attempts are evaluated against their stored snapshot.
 
 ## Vercel frontend deployment
 
@@ -150,7 +169,7 @@ cd ..\frontend
 npm run build
 ```
 
-The backend suite covers endpoint validation, health, CORS, safe database failures, email-provider failure after persistence, rate limiting, and scoring. A real PostgreSQL connection and SMTP delivery require credentials and must be verified in the target environment.
+The backend suite covers endpoint validation, health, CORS, safe database failures, email-provider failure after persistence, rate limiting, Excel/CSV extraction, an exact 30-question workbook, text-PDF extraction, missing answers, file-signature rejection, and exact multiple-correct evaluation. Run `node tests/e2e-live.mjs` only against a development database to create and verify a complete 30-question teacher/admin/student workflow. See `AUDIT_AND_TEST_REPORT.md` for recorded results and limitations.
 
 ## Product boundaries
 

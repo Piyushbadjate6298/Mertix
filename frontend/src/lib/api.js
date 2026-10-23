@@ -2,15 +2,16 @@ const configuredBase = String(import.meta.env.VITE_API_BASE_URL || 'http://local
 
 export async function api(path, { method = 'GET', body, token } = {}) {
   const headers = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const form = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   let response;
   try {
     response = await fetch(`${configuredBase}/api${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+      signal: AbortSignal.timeout(form ? 60_000 : 15_000),
     });
   } catch (error) {
     if (error.name === 'TimeoutError') throw new Error('The server took too long to respond. Please try again.');

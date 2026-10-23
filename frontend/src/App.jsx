@@ -23,13 +23,17 @@ import {
   TeacherDashboard,
   PaperBuilder,
   QuestionBank,
+  ImportQuestionBank,
 } from "./pages/teacher/Teacher";
 import {
   AdminDashboard,
   ManageExams,
   ManageStudents,
   ManagePapers,
+  ManageQuestionBanks,
   ManageSupport,
+  ManageCourses,
+  PlatformConfiguration,
 } from "./pages/admin/Admin";
 import {
   FinanceDashboard,
@@ -89,6 +93,10 @@ export default function App() {
             path="/teacher/questions"
             element={protect("teacher", QuestionBank)}
           />
+          <Route
+            path="/teacher/import"
+            element={protect("teacher", ImportQuestionBank)}
+          />
           <Route path="/admin" element={protect("admin", AdminDashboard)} />
           <Route path="/admin/exams" element={protect("admin", ManageExams)} />
           <Route
@@ -100,9 +108,16 @@ export default function App() {
             element={protect("admin", ManagePapers)}
           />
           <Route
+            path="/admin/question-banks"
+            element={protect("admin", ManageQuestionBanks)}
+          />
+          <Route path="/admin/import" element={protect("admin", ImportQuestionBank)} />
+          <Route
             path="/admin/support"
             element={protect("admin", ManageSupport)}
           />
+          <Route path="/admin/courses" element={protect("admin", ManageCourses)} />
+          <Route path="/admin/configuration" element={protect("admin", PlatformConfiguration)} />
           <Route
             path="/superadmin"
             element={protect("superadmin", FinanceDashboard)}
