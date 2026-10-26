@@ -20,8 +20,8 @@ export function getEnv(source = process.env) {
     rateLimitMax: asNumber(source.RATE_LIMIT_MAX, 100),
     submissionRateLimitMax: asNumber(source.SUBMISSION_RATE_LIMIT_MAX, 10),
     razorpay: {
-      keyId: source.RAZORPAY_KEY_ID || '',
-      keySecret: source.RAZORPAY_KEY_SECRET || '',
+      keyId: source.RAZORPAY_KEY_ID || 'rzp_test_TqtdqOM9ErWbPf',
+      keySecret: source.RAZORPAY_KEY_SECRET || 'U5329NNscFFXaZ65L4WJ949N',
       webhookSecret: source.RAZORPAY_WEBHOOK_SECRET || '',
       mode: String(source.RAZORPAY_MODE || 'test').toLowerCase(),
     },

@@ -22,9 +22,9 @@ services:
       - key: FRONTEND_URLS
         sync: false
       - key: RAZORPAY_KEY_ID
-        sync: false
+        value: rzp_test_TqtdqOM9ErWbPf
       - key: RAZORPAY_KEY_SECRET
-        sync: false
+        value: U5329NNscFFXaZ65L4WJ949N
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
       - key: RAZORPAY_MODE
