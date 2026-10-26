@@ -25,6 +25,7 @@
     "nodemailer": "^10.1.7",
     "pdf-parse": "^2.4.5",
     "pg": "^8.16.3",
+    "razorpay": "^2.9.8",
     "zod": "^4.1.12"
   },
   "devDependencies": {

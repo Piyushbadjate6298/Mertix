@@ -16,7 +16,8 @@ import {
   Trophy,
 } from "lucide-react";
 import { SiteFooter, SiteHeader } from "../../components/Layouts";
-import { api, money } from "../../lib/api";
+import { api } from "../../lib/api";
+import { ExamCard } from "./Exams";
 import sliderUpsc from "../../assets/Images/Sliders/8-display.jpg";
 import sliderNeet from "../../assets/Images/Sliders/9-display.jpg";
 import "./Home.css";
@@ -59,7 +60,7 @@ const features = [
 
 export default function Home() {
   const [active, setActive] = useState(0);
-  const [courses, setCourses] = useState([]);
+  const [exams, setExams] = useState([]);
   const [landing, setLanding] = useState(null);
   const touchStart = useRef(null);
   const change = (next) => setActive((next + slides.length) % slides.length);
@@ -73,7 +74,7 @@ export default function Home() {
     );
     return () => window.clearInterval(timer);
   }, []);
-  useEffect(() => { Promise.all([api('/courses'), api('/landing-content')]).then(([courseData, contentData]) => { setCourses(courseData.courses); setLanding(contentData.content.about_courses || null); }).catch(() => {}); }, []);
+  useEffect(() => { Promise.all([api('/exams'), api('/landing-content')]).then(([examData, contentData]) => { setExams(examData.exams); setLanding(contentData.content.about_courses || null); }).catch(() => {}); }, []);
 
   const slide = slides[active];
   return (
@@ -177,7 +178,7 @@ export default function Home() {
               </Link>
             </div>
             <div className="home-course-grid">
-              {courses.map((course) => <article className="landing-course-card" key={course.id}>{course.imageUrl && <img src={course.imageUrl} alt=""/>}<span className="tag">{course.examType}</span><h3>{course.name}</h3><p>{course.shortDescription}</p><div><small>{course.mockTestCount} mock test{course.mockTestCount === 1 ? '' : 's'} · {course.durationDays} days</small><strong>{course.fee ? money(course.fee * (1 - course.discountPercent / 100)) : 'FREE'}</strong></div><Link className="btn btn-primary small" to="/exams">View examinations <ArrowRight size={15}/></Link></article>)}
+              {exams.slice(0, 4).map((exam) => <ExamCard key={exam.id} exam={exam} />)}
             </div>
           </div>
         </section>

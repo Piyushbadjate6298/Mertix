@@ -173,4 +173,15 @@ The backend suite covers endpoint validation, health, CORS, safe database failur
 
 ## Product boundaries
 
-Fees, rankings, prize pools, wallets, and payments remain illustrative. No real payment or payout provider is enabled. The question bank is representative and is not affiliated with NTA or IITs.
+Rankings, prize pools, and wallets remain illustrative. Paid examination enrollment uses Razorpay Standard Checkout when Razorpay is configured; the default `RAZORPAY_MODE=test` accepts simulated test payments only. The question bank is representative and is not affiliated with NTA or IITs.
+
+## Razorpay Test Mode
+
+1. In the Razorpay Dashboard, switch to **Test Mode** and generate a test Key ID and Key Secret.
+2. Copy `backend/.env.example` to `backend/.env` if needed, then set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and keep `RAZORPAY_MODE=test`.
+3. Set a separate `RAZORPAY_WEBHOOK_SECRET`, then add `https://YOUR_API_HOST/api/payments/webhook` in the Razorpay Test Mode dashboard for the `payment.captured` and `payment.failed` events.
+4. Restart the backend. Only the Key ID is returned to the browser; the Key Secret and Webhook Secret remain server-side.
+5. Publish a course, set its Admin price above ₹0, and link an examination to it. The latest course price is read by the backend when the student starts checkout.
+6. Use Razorpay's documented Test Mode payment methods. Enrollment is created only after HMAC signature verification and a trusted Razorpay API fetch confirms the expected order, INR amount, and `captured` status.
+
+The immediate success path verifies the checkout signature and fetches the payment from Razorpay before enrollment. The signed webhook path independently handles captured/failed notifications, repeated delivery, and failed events arriving after a successful capture without duplicating or revoking enrollment. To move to live payments later, complete Razorpay activation and production testing first, explicitly set `RAZORPAY_MODE=live`, and replace both credentials with matching `rzp_live_...` keys. Test and live key prefixes are checked so they cannot be mixed accidentally.

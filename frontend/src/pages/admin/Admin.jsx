@@ -133,12 +133,12 @@ export function AdminDashboard() {
   );
 }
 
-const MAX_ARTWORK_SOURCE_BYTES = 8 * 1024 * 1024;
+const MAX_ARTWORK_SOURCE_BYTES = 20 * 1024 * 1024;
 const MAX_ARTWORK_DATA_LENGTH = 1_800_000;
 
 async function optimizeArtwork(file) {
   if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose a JPG, PNG, or WebP image.');
-  if (file.size > MAX_ARTWORK_SOURCE_BYTES) throw new Error('The original image must be smaller than 8 MB.');
+  if (file.size > MAX_ARTWORK_SOURCE_BYTES) throw new Error('The original image must be smaller than 20 MB.');
   const objectUrl = URL.createObjectURL(file);
   try {
     const image = await new Promise((resolve, reject) => {

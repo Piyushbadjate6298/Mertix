@@ -9,6 +9,7 @@ import { createApiRouter } from "./routes/index.js";
 
 export function createApp({ service, emailService, env }) {
   const app = express();
+  const controller = createPlatformController({ service, emailService, env });
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
@@ -26,12 +27,16 @@ export function createApp({ service, emailService, env }) {
       maxAge: 86_400,
     }),
   );
-  // Course/exam artwork is compressed in the browser before it is saved as a
-  // data URL. Keep the limit deliberately small enough to reject original
-  // camera files while allowing the optimized admin upload.
-  app.use(express.json({ limit: "2mb" }));
+  app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '256kb' }), controller.paymentWebhook);
+  // A course can carry both a card image and a banner. Each is browser-optimized
+  // and validator-limited, so the JSON envelope must safely fit both values.
+  app.use(express.json({ limit: "4mb" }));
+  app.use('/api/exams', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api/courses', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api/landing-content', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api/admin/courses', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api/admin/exams', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use("/api", createGeneralLimiter(env));
-  const controller = createPlatformController({ service, emailService, env });
   app.use("/api", createApiRouter({ controller, service, env }));
   app.use(notFound);
   app.use(errorHandler);

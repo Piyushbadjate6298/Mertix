@@ -9,6 +9,13 @@ export const schemas = {
   login: z.object({ email: z.email().max(254).transform((value) => value.toLowerCase()), password: z.string().min(1).max(128) }),
   register: z.object({ name: text(2, 120), email: z.email().max(254).transform((value) => value.toLowerCase()), password: z.string().min(8).max(128), target: z.enum(['JEE Main', 'JEE Advanced', 'NEET UG']).default('JEE Main') }),
   examRegistration: z.object({ examId: text(1, 80) }),
+  paymentOrder: z.object({ examId: text(1, 80) }),
+  paymentVerification: z.object({
+    razorpayOrderId: text(1, 100),
+    razorpayPaymentId: text(1, 100),
+    razorpaySignature: text(16, 256),
+  }),
+  paymentFailure: z.object({ razorpayOrderId: text(1, 100), reason: z.string().trim().max(500).default('Payment was not completed') }),
   attemptStart: z.object({ examId: text(1, 80), acceptedInstructions: z.literal(true) }),
   attemptSave: z.object({ attemptId: text(1, 80), answers: z.record(z.string(), z.union([z.number().int().min(0).max(7), z.string().trim().max(80), z.array(z.number().int().min(0).max(7)).max(8), z.null()])).default({}), marked: z.array(z.union([z.string(), z.number().int()])).max(500).default([]) }),
   attemptSubmit: z.object({ attemptId: text(1, 80), answers: z.record(z.string(), z.union([z.number().int().min(0).max(7), z.string().trim().max(80), z.array(z.number().int().min(0).max(7)).max(8), z.null()])).default({}) }),

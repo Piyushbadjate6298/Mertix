@@ -114,6 +114,7 @@ export function StudentDashboard() {
                     <strong>{e?.title || r.examId}</strong>
                     <small>
                       {e ? friendlyDate(e.date) : "Mock test"} ·{" "}
+                      {e ? `Current fee: ${e.fee ? money(e.fee) : "FREE"}` : "Fee unavailable"} ·{" "}
                       {a?.status === "submitted"
                         ? "Completed"
                         : "Ready to attempt"}

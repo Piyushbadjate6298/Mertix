@@ -15,7 +15,7 @@ const dateOnly = (value) => {
 };
 const publicUser = (row) => row && ({ id: row.id, name: row.name, email: row.email, role: row.role, target: row.target, city: row.city, year: row.academic_year, createdAt: iso(row.created_at) });
 const registration = (row) => ({ id: row.id, studentId: row.student_id, examId: row.exam_id, paymentId: row.payment_id, status: row.status, date: iso(row.created_at) });
-const payment = (row) => ({ id: row.id, studentId: row.student_id, examId: row.exam_id, amount: Number(row.amount), status: row.status, gateway: row.gateway, date: iso(row.created_at) });
+const payment = (row) => ({ id: row.id, studentId: row.student_id, examId: row.exam_id, courseId: row.course_id || null, amount: Number(row.amount), amountPaise: Number(row.amount_paise || 0), currency: row.currency || 'INR', status: row.status, gateway: row.gateway, orderId: row.gateway_order_id || null, paymentId: row.gateway_payment_id || null, failureReason: row.failure_reason || null, date: iso(row.verified_at || row.created_at) });
 const paper = (row) => ({ id: row.id, title: row.title, subject: row.subject, questions: row.question_count, status: row.status, createdBy: row.created_by, date: iso(row.created_at) });
 const ticket = (row) => ({ id: row.id, userId: row.user_id, subject: row.subject, message: row.message, status: row.status, createdAt: iso(row.created_at) });
 const attempt = (row) => ({ id: row.id, studentId: row.student_id, examId: row.exam_id, status: row.status, answers: row.answers || {}, marked: row.marked || [], result: row.result, questions: row.status === 'submitted' ? (row.question_snapshot || []) : undefined, durationSeconds: row.duration_seconds, startedAt: iso(row.started_at), deadlineAt: iso(row.deadline_at), serverNow: new Date().toISOString(), acceptedInstructionsAt: iso(row.accepted_instructions_at), currentSegment: Number(row.current_segment || 1), segmentState: row.segment_state || {}, lastSavedAt: iso(row.last_saved_at), submittedAt: iso(row.submitted_at), timeTaken: row.time_taken });
@@ -24,7 +24,11 @@ const bankQuestion = (row) => ({ id: row.id, externalQuestionId: row.external_qu
 const pattern = (row) => ({ id: row.id, code: row.code, name: row.name, version: Number(row.version), officialYear: row.official_year, configuration: row.configuration, status: row.status, builtIn: row.is_builtin, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) });
 const course = (row) => ({ id: row.id, slug: row.slug, name: row.name, category: row.category, examType: row.exam_type, shortDescription: row.short_description, fullDescription: row.full_description, imageUrl: row.image_url, bannerImageUrl: row.banner_image_url, fee: Number(row.fee), discountPercent: Number(row.discount_percent), durationDays: row.duration_days, mockTestCount: row.mock_test_count, publishedExamCount: Number(row.published_exam_count || 0), publishedQuestionCount: Number(row.published_question_count || 0), status: row.status, visible: row.is_visible, featured: row.is_featured, displayOrder: row.display_order, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) });
 
-export function createPlatformService(db) {
+export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
+  const razorpayConfig = env.razorpay || {};
+  const expectedKeyPrefix = razorpayConfig.mode === 'live' ? 'rzp_live_' : 'rzp_test_';
+  const paymentProviderConfigured = Boolean(razorpay && razorpayConfig.keyId?.startsWith(expectedKeyPrefix) && razorpayConfig.keySecret && ['test', 'live'].includes(razorpayConfig.mode));
+  const discountedFee = (fee, discountPercent = 0) => Math.max(0, Number((Number(fee || 0) * (1 - Number(discountPercent || 0) / 100)).toFixed(2)));
   async function log(actorId, action, detail, client = db) {
     await client.query('INSERT INTO audit_log (id, actor_id, action, detail) VALUES ($1,$2,$3,$4)', [uid('audit'), actorId, action, String(detail || '').slice(0, 500)]);
   }
@@ -32,8 +36,8 @@ export function createPlatformService(db) {
   async function listExams(client = db) {
     const [overrideResult, publishedResult, courseResult] = await Promise.all([
       client.query('SELECT *, exam_date::text AS exam_date_text FROM exam_overrides'),
-      client.query('SELECT p.*, c.image_url AS course_image_url, c.banner_image_url AS course_banner_image_url FROM published_exams p LEFT JOIN courses c ON c.id=p.course_id ORDER BY p.published_at DESC'),
-      client.query(`SELECT * FROM courses WHERE status='published' AND is_visible=TRUE ORDER BY display_order,name`),
+      client.query('SELECT p.*, c.image_url AS course_image_url, c.banner_image_url AS course_banner_image_url, c.fee AS course_fee, c.discount_percent AS course_discount_percent, c.status AS course_status, c.is_visible AS course_visible FROM published_exams p LEFT JOIN courses c ON c.id=p.course_id ORDER BY p.published_at DESC'),
+      client.query('SELECT * FROM courses ORDER BY display_order,name'),
     ]);
     const overrides = Object.fromEntries(overrideResult.rows.map((row) => [row.exam_id, row]));
     const applyOverride = (exam) => {
@@ -55,17 +59,43 @@ export function createPlatformService(db) {
         registrationOpen: row.registration_open ?? exam.registrationOpen,
       };
     };
-    const imported = publishedResult.rows.map((row) => applyOverride({ id: row.id, title: row.title, type: row.exam_type, subject: (row.subjects || []).join(' · '), subjects: row.subjects || [], date: (row.starts_at ? new Date(row.starts_at) : new Date(row.published_at)).toISOString().slice(0, 10), startsAt: iso(row.starts_at), endsAt: iso(row.ends_at), time: row.starts_at ? new Date(row.starts_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Available now', duration: row.duration_minutes, questions: row.question_count, marks: Number(row.configuration_snapshot?.maximumMarks || 0), fee: row.is_free ? 0 : Number(row.price || 0), discountPercent: Number(row.discount_percent || 0), registered: 0, prize: 0, tag: row.is_free ? 'Free' : 'Paid', description: row.description || 'MERITX mock examination approved and published by administration.', syllabus: (row.subjects || []).join(', '), status: row.status, imageUrl: row.course_banner_image_url || row.course_image_url || null, bankId: row.bank_id, courseId: row.course_id, patternId: row.pattern_id, patternVersion: row.pattern_version, configuration: row.configuration_snapshot || {}, importMode: row.import_mode || 'compatible_practice', registrationOpen: row.registration_open, paperVersion: row.paper_version }));
+    const imported = publishedResult.rows.map((row) => {
+      if (row.course_id && (row.course_status !== 'published' || !row.course_visible)) return null;
+      const linkedFee = row.course_id ? discountedFee(row.course_fee, row.course_discount_percent) : null;
+      const fee = linkedFee ?? (row.is_free ? 0 : discountedFee(row.price, row.discount_percent));
+      return applyOverride({ id: row.id, title: row.title, type: row.exam_type, subject: (row.subjects || []).join(' · '), subjects: row.subjects || [], date: (row.starts_at ? new Date(row.starts_at) : new Date(row.published_at)).toISOString().slice(0, 10), startsAt: iso(row.starts_at), endsAt: iso(row.ends_at), time: row.starts_at ? new Date(row.starts_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Available now', duration: row.duration_minutes, questions: row.question_count, marks: Number(row.configuration_snapshot?.maximumMarks || 0), fee, discountPercent: 0, registered: 0, prize: 0, tag: fee ? 'Paid' : 'Free', description: row.description || 'MERITX mock examination approved and published by administration.', syllabus: (row.subjects || []).join(', '), status: row.status, imageUrl: row.course_banner_image_url || row.course_image_url || null, bankId: row.bank_id, courseId: row.course_id, patternId: row.pattern_id, patternVersion: row.pattern_version, configuration: row.configuration_snapshot || {}, importMode: row.import_mode || 'compatible_practice', registrationOpen: row.registration_open, paperVersion: row.paper_version });
+    });
     const coursesByType = Object.fromEntries(courseResult.rows.map((row) => [row.exam_type, row]));
     const builtIn = exams.map((item) => {
       const linkedCourse = coursesByType[item.type];
-      return applyOverride({ ...item, discountPercent: 0, imageUrl: linkedCourse?.banner_image_url || linkedCourse?.image_url || null, courseId: linkedCourse?.id || null, registrationOpen: true });
+      if (linkedCourse && (linkedCourse.status !== 'published' || !linkedCourse.is_visible)) return null;
+      const fee = linkedCourse ? discountedFee(linkedCourse.fee, linkedCourse.discount_percent) : Number(item.fee || 0);
+      return applyOverride({ ...item, fee, tag: fee ? 'Paid' : 'Free', discountPercent: 0, imageUrl: linkedCourse?.banner_image_url || linkedCourse?.image_url || null, courseId: linkedCourse?.id || null, registrationOpen: true });
     });
-    return [...imported, ...builtIn].filter((item) => !overrides[item.id]?.is_deleted);
+    return [...imported, ...builtIn]
+      .filter(Boolean)
+      .filter((item) => !overrides[item.id]?.is_deleted)
+      .map((item) => ({ ...item, fee: discountedFee(item.fee, item.discountPercent), discountPercent: 0, tag: discountedFee(item.fee, item.discountPercent) > 0 ? 'Paid' : 'Free' }));
   }
 
   async function getExam(examId, client = db) {
     return (await listExams(client)).find((item) => item.id === examId) || null;
+  }
+
+  async function finalizeCapturedPayment(stored, trustedPayment) {
+    if (trustedPayment.order_id !== stored.gateway_order_id || Number(trustedPayment.amount) !== Number(stored.amount_paise) || trustedPayment.currency !== stored.currency || trustedPayment.status !== 'captured') throw new AppError(409, 'Payment has not been captured with the expected amount', 'PAYMENT_NOT_CAPTURED');
+    return db.transaction(async (client) => {
+      const locked = (await client.query('SELECT * FROM payments WHERE id=$1 FOR UPDATE', [stored.id])).rows[0];
+      if (locked.status !== 'captured') {
+        await client.query(`UPDATE payments SET status='captured',gateway_payment_id=$1,failure_reason=NULL,verified_at=NOW(),updated_at=NOW() WHERE id=$2`, [trustedPayment.id, stored.id]);
+        await client.query(`INSERT INTO registrations (id,student_id,exam_id,payment_id,status) VALUES ($1,$2,$3,$4,'confirmed') ON CONFLICT (student_id,exam_id) DO UPDATE SET payment_id=EXCLUDED.payment_id,status='confirmed'`, [uid('reg'), stored.student_id, stored.exam_id, stored.id]);
+        await log(stored.student_id, 'PAYMENT_CAPTURED_AND_ENROLLED', `${stored.exam_id}:${trustedPayment.id}`, client);
+      }
+      const finalPayment = (await client.query('SELECT * FROM payments WHERE id=$1', [stored.id])).rows[0];
+      const user = (await client.query('SELECT name FROM users WHERE id=$1', [stored.student_id])).rows[0];
+      const exam = await getExam(stored.exam_id, client);
+      return { payment: payment(finalPayment), studentName: user?.name || '', courseName: exam?.title || stored.exam_id, enrollmentConfirmed: true };
+    });
   }
 
   async function getPattern(idOrCode, client = db) {
@@ -213,8 +243,8 @@ export function createPlatformService(db) {
         const exists = await client.query('SELECT 1 FROM registrations WHERE student_id=$1 AND exam_id=$2', [studentId, examId]);
         if (exists.rowCount) throw new AppError(409, 'Already registered', 'ALREADY_REGISTERED');
         const paymentRow = (await client.query(
-          `INSERT INTO payments (id,student_id,exam_id,amount,status) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-          [uid('pay'), studentId, examId, 0, 'free'],
+          `INSERT INTO payments (id,student_id,exam_id,course_id,amount,amount_paise,status,gateway) VALUES ($1,$2,$3,$4,0,0,'free','FREE') RETURNING *`,
+          [uid('pay'), studentId, examId, exam.courseId || null],
         )).rows[0];
         const registrationRow = (await client.query(
           `INSERT INTO registrations (id,student_id,exam_id,payment_id,status) VALUES ($1,$2,$3,$4,'confirmed') RETURNING *`,
@@ -223,6 +253,81 @@ export function createPlatformService(db) {
         await log(studentId, 'EXAM_REGISTER', examId, client);
         return { registration: registration(registrationRow), payment: payment(paymentRow) };
       });
+    },
+    paymentConfiguration() {
+      return { configured: paymentProviderConfigured, mode: razorpayConfig.mode || 'test' };
+    },
+    async createPaymentOrder(studentId, examId) {
+      const exam = await getExam(examId);
+      if (!exam || !['published', 'upcoming'].includes(exam.status) || exam.registrationOpen === false) throw new AppError(409, 'Registration is not available for this examination', 'REGISTRATION_CLOSED');
+      const amount = discountedFee(exam.fee, exam.discountPercent);
+      if (amount <= 0) return { free: true };
+      if (!paymentProviderConfigured) throw new AppError(503, 'Razorpay Test Mode is not configured. Ask an administrator to add the test API keys.', 'PAYMENT_PROVIDER_NOT_CONFIGURED');
+
+      return db.transaction(async (client) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`payment:${studentId}:${examId}`]);
+        const enrolled = await client.query(`SELECT 1 FROM registrations WHERE student_id=$1 AND exam_id=$2 AND status='confirmed'`, [studentId, examId]);
+        if (enrolled.rowCount) throw new AppError(409, 'Already registered', 'ALREADY_REGISTERED');
+        const existing = await client.query(`SELECT * FROM payments WHERE student_id=$1 AND exam_id=$2 AND status='created' AND amount_paise=$3 AND created_at > NOW() - INTERVAL '15 minutes' ORDER BY created_at DESC LIMIT 1`, [studentId, examId, Math.round(amount * 100)]);
+        if (existing.rows[0]) return { free: false, keyId: razorpayConfig.keyId, mode: razorpayConfig.mode, order: { id: existing.rows[0].gateway_order_id, amount: Number(existing.rows[0].amount_paise), currency: existing.rows[0].currency }, payment: payment(existing.rows[0]), exam: { id: exam.id, name: exam.title } };
+
+        const internalId = uid('pay');
+        const amountPaise = Math.round(amount * 100);
+        const gatewayOrder = await razorpay.orders.create({
+          amount: amountPaise,
+          currency: 'INR',
+          receipt: internalId.slice(0, 40),
+          notes: { studentId, examId, courseId: exam.courseId || '' },
+        });
+        const row = (await client.query(`INSERT INTO payments (id,student_id,exam_id,course_id,amount,amount_paise,currency,status,gateway,gateway_order_id) VALUES ($1,$2,$3,$4,$5,$6,'INR','created','RAZORPAY',$7) RETURNING *`, [internalId, studentId, examId, exam.courseId || null, amount, amountPaise, gatewayOrder.id])).rows[0];
+        await log(studentId, 'PAYMENT_ORDER_CREATE', `${examId}:${gatewayOrder.id}`, client);
+        return { free: false, keyId: razorpayConfig.keyId, mode: razorpayConfig.mode, order: { id: gatewayOrder.id, amount: Number(gatewayOrder.amount), currency: gatewayOrder.currency }, payment: payment(row), exam: { id: exam.id, name: exam.title } };
+      });
+    },
+    async verifyPayment(studentId, { razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
+      const stored = (await db.query(`SELECT * FROM payments WHERE student_id=$1 AND gateway_order_id=$2`, [studentId, razorpayOrderId])).rows[0];
+      if (!stored) throw new AppError(404, 'Payment order not found', 'PAYMENT_ORDER_NOT_FOUND');
+      if (stored.status === 'captured') {
+        if (stored.gateway_payment_id !== razorpayPaymentId) throw new AppError(409, 'This order was already paid using a different payment', 'PAYMENT_ALREADY_CAPTURED');
+        const exam = await getExam(stored.exam_id);
+        const user = (await db.query('SELECT name FROM users WHERE id=$1', [studentId])).rows[0];
+        return { payment: payment(stored), studentName: user?.name || '', courseName: exam?.title || stored.exam_id, enrollmentConfirmed: true };
+      }
+      if (!paymentProviderConfigured) throw new AppError(503, 'Razorpay is not configured', 'PAYMENT_PROVIDER_NOT_CONFIGURED');
+
+      const expectedSignature = crypto.createHmac('sha256', razorpayConfig.keySecret).update(`${stored.gateway_order_id}|${razorpayPaymentId}`).digest('hex');
+      const supplied = Buffer.from(razorpaySignature, 'utf8');
+      const expected = Buffer.from(expectedSignature, 'utf8');
+      if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) throw new AppError(400, 'Payment signature verification failed', 'PAYMENT_SIGNATURE_INVALID');
+
+      const trustedPayment = await razorpay.payments.fetch(razorpayPaymentId);
+      return finalizeCapturedPayment(stored, trustedPayment);
+    },
+    async markPaymentFailed(studentId, { razorpayOrderId, reason }) {
+      const row = (await db.query(`UPDATE payments SET status='failed',failure_reason=$1,updated_at=NOW() WHERE student_id=$2 AND gateway_order_id=$3 AND status='created' RETURNING *`, [reason || 'Payment was not completed', studentId, razorpayOrderId])).rows[0];
+      return row ? payment(row) : null;
+    },
+    async processPaymentWebhook(signature, rawBody) {
+      if (!paymentProviderConfigured || !razorpayConfig.webhookSecret) throw new AppError(503, 'Razorpay webhook handling is not configured', 'PAYMENT_WEBHOOK_NOT_CONFIGURED');
+      if (!signature || !Buffer.isBuffer(rawBody)) throw new AppError(400, 'Invalid Razorpay webhook request', 'PAYMENT_WEBHOOK_INVALID');
+      const expectedSignature = crypto.createHmac('sha256', razorpayConfig.webhookSecret).update(rawBody).digest('hex');
+      const supplied = Buffer.from(signature, 'utf8');
+      const expected = Buffer.from(expectedSignature, 'utf8');
+      if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) throw new AppError(400, 'Webhook signature verification failed', 'PAYMENT_WEBHOOK_SIGNATURE_INVALID');
+      let event;
+      try { event = JSON.parse(rawBody.toString('utf8')); }
+      catch { throw new AppError(400, 'Webhook body must be valid JSON', 'PAYMENT_WEBHOOK_INVALID'); }
+      if (!['payment.captured', 'payment.failed'].includes(event.event)) return { received: true, ignored: true };
+      const entity = event.payload?.payment?.entity;
+      if (!entity?.order_id) return { received: true, ignored: true };
+      const stored = (await db.query('SELECT * FROM payments WHERE gateway_order_id=$1', [entity.order_id])).rows[0];
+      if (!stored) return { received: true, ignored: true };
+      if (event.event === 'payment.failed') {
+        await db.query(`UPDATE payments SET status='failed',failure_reason=$1,updated_at=NOW() WHERE id=$2 AND status='created'`, [entity.error_description || 'Razorpay reported a failed payment', stored.id]);
+        return { received: true, status: 'failed' };
+      }
+      if (stored.status !== 'captured') await finalizeCapturedPayment(stored, await razorpay.payments.fetch(entity.id));
+      return { received: true, status: 'captured' };
     },
     async startAttempt(studentId, examId, acceptedInstructions = false) {
       const exam = await getExam(examId);

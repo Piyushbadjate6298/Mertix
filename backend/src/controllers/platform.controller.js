@@ -21,6 +21,15 @@ export function createPlatformController({ service, emailService, env }) {
     },
     dashboard: async (req, res) => success(res, await service.studentDashboard(req.user.id)),
     registerExam: async (req, res) => success(res, await service.registerExam(req.user.id, req.validatedBody.examId), 201),
+    paymentConfiguration: async (_req, res) => success(res, service.paymentConfiguration()),
+    createPaymentOrder: async (req, res) => {
+      const order = await service.createPaymentOrder(req.user.id, req.validatedBody.examId);
+      if (order.free) return success(res, { ...order, ...(await service.registerExam(req.user.id, req.validatedBody.examId)) }, 201);
+      return success(res, order, 201);
+    },
+    verifyPayment: async (req, res) => success(res, await service.verifyPayment(req.user.id, req.validatedBody)),
+    markPaymentFailed: async (req, res) => success(res, { payment: await service.markPaymentFailed(req.user.id, req.validatedBody) }),
+    paymentWebhook: async (req, res) => success(res, await service.processPaymentWebhook(req.get('x-razorpay-signature'), req.body)),
     startAttempt: async (req, res) => success(res, { attempt: await service.startAttempt(req.user.id, req.validatedBody.examId, req.validatedBody.acceptedInstructions) }),
     saveAttempt: async (req, res) => success(res, { saved: true, attempt: await service.saveAttempt(req.user.id, req.validatedBody) }),
     submitAttempt: async (req, res) => success(res, { attempt: await service.submitAttempt(req.user.id, req.validatedBody) }),

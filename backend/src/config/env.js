@@ -19,6 +19,12 @@ export function getEnv(source = process.env) {
     rateLimitWindowMs: asNumber(source.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     rateLimitMax: asNumber(source.RATE_LIMIT_MAX, 100),
     submissionRateLimitMax: asNumber(source.SUBMISSION_RATE_LIMIT_MAX, 10),
+    razorpay: {
+      keyId: source.RAZORPAY_KEY_ID || '',
+      keySecret: source.RAZORPAY_KEY_SECRET || '',
+      webhookSecret: source.RAZORPAY_WEBHOOK_SECRET || '',
+      mode: String(source.RAZORPAY_MODE || 'test').toLowerCase(),
+    },
     smtp: {
       host: source.SMTP_HOST || '',
       port: asNumber(source.SMTP_PORT, 587),

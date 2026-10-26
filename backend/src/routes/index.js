@@ -28,6 +28,7 @@ export function createApiRouter({ controller, service, env }) {
   router.get("/exams", controller.exams);
   router.get('/courses', controller.publicCourses);
   router.get('/landing-content', controller.landingContent);
+  router.get('/payments/configuration', controller.paymentConfiguration);
   router.get("/questions", authenticate, controller.questions);
   router.get(
     "/me/dashboard",
@@ -43,6 +44,9 @@ export function createApiRouter({ controller, service, env }) {
     validateBody(schemas.examRegistration),
     controller.registerExam,
   );
+  router.post('/payments/orders', submissions, authenticate, authorize('student'), validateBody(schemas.paymentOrder), controller.createPaymentOrder);
+  router.post('/payments/verify', submissions, authenticate, authorize('student'), validateBody(schemas.paymentVerification), controller.verifyPayment);
+  router.post('/payments/failure', submissions, authenticate, authorize('student'), validateBody(schemas.paymentFailure), controller.markPaymentFailed);
   router.post(
     "/attempts/start",
     authenticate,
