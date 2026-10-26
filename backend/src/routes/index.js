@@ -26,6 +26,7 @@ export function createApiRouter({ controller, service, env }) {
   );
   router.get("/auth/me", authenticate, controller.me);
   router.get("/exams", controller.exams);
+  router.get("/exams/:id", controller.examById);
   router.get('/courses', controller.publicCourses);
   router.get('/landing-content', controller.landingContent);
   router.get('/payments/configuration', controller.paymentConfiguration);

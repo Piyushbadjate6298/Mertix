@@ -40,8 +40,13 @@ export function StudentDashboard() {
   if (!data)
     return (
       <Shell title="Student dashboard">
-        <Loading />
-        {error}
+        {error ? (
+          <div className="alert error" style={{ margin: '20px 0' }}>
+            {error}
+          </div>
+        ) : (
+          <Loading />
+        )}
       </Shell>
     );
   const attempts = data.attempts.filter((a) => a.status === "submitted");

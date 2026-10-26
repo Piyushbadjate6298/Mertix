@@ -74,7 +74,10 @@ export default function Home() {
     );
     return () => window.clearInterval(timer);
   }, []);
-  useEffect(() => { Promise.all([api('/exams'), api('/landing-content')]).then(([examData, contentData]) => { setExams(examData.exams); setLanding(contentData.content.about_courses || null); }).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/exams').then((examData) => setExams(examData?.exams || [])).catch(() => {});
+    api('/landing-content').then((contentData) => setLanding(contentData?.content?.about_courses || null)).catch(() => {});
+  }, []);
 
   const slide = slides[active];
   return (

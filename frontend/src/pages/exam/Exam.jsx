@@ -173,7 +173,19 @@ export default function Exam() {
   if (!exam || !questions.length)
     return (
       <div className="exam-error">
-        <Loading />
+        {error ? (
+          <div className="instruction-card" style={{ maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
+            <AlertCircle size={36} color="#d9534f" style={{ margin: '0 auto 12px' }} />
+            <h2>Unable to load examination</h2>
+            <p className="muted">{error}</p>
+            <div style={{ marginTop: 24, display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button className="btn btn-primary small" onClick={() => window.location.reload()}>Try Again</button>
+              <Link className="btn btn-outline small" to="/student">My Dashboard</Link>
+            </div>
+          </div>
+        ) : (
+          <Loading />
+        )}
       </div>
     );
   if (!attempt) {

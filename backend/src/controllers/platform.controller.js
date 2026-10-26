@@ -13,6 +13,11 @@ export function createPlatformController({ service, emailService, env }) {
     },
     me: async (req, res) => success(res, { user: req.user }),
     exams: async (_req, res) => success(res, { exams: await service.listExams() }),
+    examById: async (req, res) => {
+      const exam = await service.getExam(req.params.id);
+      if (!exam) throw new AppError(404, 'Examination not found', 'EXAM_NOT_FOUND');
+      return success(res, { exam });
+    },
     adminExams: async (_req, res) => success(res, { exams: await service.listExams() }),
     questions: async (req, res) => {
       const examId = String(req.query.examId || '').trim();
