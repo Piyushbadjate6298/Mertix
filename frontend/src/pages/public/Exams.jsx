@@ -1,3 +1,160 @@
-import React,{useEffect,useState} from 'react';import {Link} from 'react-router-dom';import {CalendarDays,Clock3,Users,ArrowUpRight,Search,SlidersHorizontal,BookOpen,CheckCircle2} from 'lucide-react';import {SiteFooter,SiteHeader,Empty,Loading} from '../../components/Layouts';import {api,money,friendlyDate} from '../../lib/api';import './Exams.css';
-export function ExamCard({exam}){const poster=exam.imageUrl;if(poster)return <article className="exam-card image-course-card"><Link to={'/exams/'+exam.id} className="course-poster-link" aria-label={'View details for '+exam.title}><img src={poster} alt={exam.title+' course poster'}/></Link></article>;return <article className="exam-card"><div className="exam-card-top"><span className={'exam-type '+(exam.type.startsWith('NEET')?'neet':'jee')}>{exam.type}</span><span className="tag">{exam.tag}</span></div><div className="exam-symbol">{exam.type.startsWith('NEET')?'✚':'∑'}</div><h3>{exam.title}</h3><p>{exam.subject}</p><div className="exam-facts"><div><CalendarDays size={15}/>{friendlyDate(exam.date)}</div><div><Clock3 size={15}/>{exam.duration} min</div><div><Users size={15}/>{exam.registered.toLocaleString('en-IN')} joined</div><div><BookOpen size={15}/>{exam.questions} questions</div></div><div className="exam-bottom"><div><small>REGISTRATION</small><strong>{exam.fee?money(exam.fee):'FREE'}</strong></div><Link to={'/exams/'+exam.id} className="btn btn-primary small">View Details <ArrowUpRight size={15}/></Link></div></article>}
-export default function Exams(){const[exams,setExams]=useState([]);const[loading,setLoading]=useState(true);const[query,setQuery]=useState('');const[filter,setFilter]=useState('All Exams');useEffect(()=>{api('/exams').then(d=>setExams(d.exams)).catch(()=>{}).finally(()=>setLoading(false))},[]);const shown=exams.filter(e=>(filter==='All Exams'||e.type.includes(filter))&&e.title.toLowerCase().includes(query.toLowerCase()));return <><SiteHeader/><div className="exams-page"><div className="container"><div className="exams-heading"><span className="eyebrow">DISCOVER YOUR NEXT CHALLENGE</span><h1>Discover. Prepare. <span className="gradient-text">Excel.</span></h1><p>Curated examinations designed to challenge you, sharpen your skills and elevate your rank.</p></div><div className="exam-controls"><div className="exam-search"><Search size={18}/><input aria-label="Search exams" placeholder="Search exams..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="exam-filter"><SlidersHorizontal size={17}/><select aria-label="Filter exam type" value={filter} onChange={e=>setFilter(e.target.value)}><option>All Exams</option><option>JEE</option><option>NEET</option></select></div></div>{loading?<Loading/>:shown.length?<div className="exam-list-grid">{shown.map(e=><ExamCard key={e.id} exam={e}/>)}</div>:<Empty title="No matching exams" text="Try a different search or filter."/>}<div className="exam-note"><CheckCircle2 size={18}/> Paid examinations use secure Razorpay checkout. Test keys process simulated payments only.</div></div></div><SiteFooter/></>}
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  CalendarDays,
+  Clock3,
+  Users,
+  ArrowUpRight,
+  Search,
+  SlidersHorizontal,
+  BookOpen,
+  CheckCircle2,
+  Lock,
+} from 'lucide-react';
+import { SiteFooter, SiteHeader, Empty, Loading } from '../../components/Layouts';
+import { api, money, friendlyDate } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
+import './Exams.css';
+
+export function ExamCard({ exam }) {
+  const poster = exam.imageUrl;
+  if (poster)
+    return (
+      <article className="exam-card image-course-card">
+        <Link
+          to={'/exams/' + exam.id}
+          className="course-poster-link"
+          aria-label={'View details for ' + exam.title}
+        >
+          <img src={poster} alt={exam.title + ' course poster'} />
+        </Link>
+      </article>
+    );
+
+  const isFeeHidden = exam.feeVisible === false;
+
+  return (
+    <article className="exam-card">
+      <div className="exam-card-top">
+        <span className={'exam-type ' + (exam.type.startsWith('NEET') ? 'neet' : 'jee')}>
+          {exam.type}
+        </span>
+        <span className="tag">{exam.tag}</span>
+      </div>
+      <div className="exam-symbol">{exam.type.startsWith('NEET') ? '✚' : '∑'}</div>
+      <h3>{exam.title}</h3>
+      <p>{exam.subject}</p>
+      <div className="exam-facts">
+        <div>
+          <CalendarDays size={15} />
+          {friendlyDate(exam.date)}
+        </div>
+        <div>
+          <Clock3 size={15} />
+          {exam.duration} min
+        </div>
+        <div>
+          <Users size={15} />
+          {exam.registered.toLocaleString('en-IN')} joined
+        </div>
+        <div>
+          <BookOpen size={15} />
+          {exam.questions} questions
+        </div>
+      </div>
+      <div className="exam-bottom">
+        <div>
+          <small>REGISTRATION</small>
+          {isFeeHidden ? (
+            <Link to="/login" style={{ color: '#2563eb', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Lock size={12} /> Login to view price
+            </Link>
+          ) : (
+            <strong>{exam.fee ? money(exam.fee) : 'FREE'}</strong>
+          )}
+        </div>
+        <Link to={'/exams/' + exam.id} className="btn btn-primary small">
+          View Details <ArrowUpRight size={15} />
+        </Link>
+      </div>
+    </article>
+  );
+}
+
+export default function Exams() {
+  const { token } = useAuth();
+  const [exams, setExams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('All Exams');
+
+  useEffect(() => {
+    api('/exams', { token })
+      .then((d) => setExams(d.exams || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const shown = exams.filter(
+    (e) =>
+      (filter === 'All Exams' || e.type.includes(filter)) &&
+      e.title.toLowerCase().includes(query.toLowerCase())
+  );
+
+  return (
+    <>
+      <SiteHeader />
+      <div className="exams-page">
+        <div className="container">
+          <div className="exams-heading">
+            <span className="eyebrow">DISCOVER YOUR NEXT CHALLENGE</span>
+            <h1>
+              Discover. Prepare. <span className="gradient-text">Excel.</span>
+            </h1>
+            <p>
+              Curated examinations designed to challenge you, sharpen your skills and elevate your rank.
+            </p>
+          </div>
+          <div className="exam-controls">
+            <div className="exam-search">
+              <Search size={18} />
+              <input
+                aria-label="Search exams"
+                placeholder="Search exams..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <div className="exam-filter">
+              <SlidersHorizontal size={17} />
+              <select
+                aria-label="Filter exam type"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                <option>All Exams</option>
+                <option>JEE</option>
+                <option>NEET</option>
+              </select>
+            </div>
+          </div>
+          {loading ? (
+            <Loading />
+          ) : shown.length ? (
+            <div className="exam-list-grid">
+              {shown.map((e) => (
+                <ExamCard key={e.id} exam={e} />
+              ))}
+            </div>
+          ) : (
+            <Empty title="No matching exams" text="Try a different search or filter." />
+          )}
+          <div className="exam-note">
+            <CheckCircle2 size={18} /> Paid examinations use secure student wallet & simulated Razorpay checkout.
+          </div>
+        </div>
+      </div>
+      <SiteFooter />
+    </>
+  );
+}

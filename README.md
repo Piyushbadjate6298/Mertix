@@ -1,187 +1,256 @@
 # MERITX — Learn. Practice. Rise.
 
-MERITX is a React/Vite educational practice experience with a separate Express/PostgreSQL API. The frontend and backend are independently deployable to Vercel and Render.
+MERITX is a comprehensive educational platform featuring authentic mock examinations, role-based workflows, and a full-featured Student Wallet, Course Enrollment, and Administrative Finance System. The system is built with a React 19 / Vite frontend and an Express / PostgreSQL API designed for high-concurrency safety and zero-trust security.
 
-## Repository audit
+---
 
-- The project contains `frontend` and `backend` applications; there is no separate `content` directory.
-- The demo exam catalogue remains in `frontend/src/data/platform.js` and `backend/src/data/platform.js`; approved imported question banks are stored in PostgreSQL and override the representative questions for their assigned exam.
-- Image assets are under `frontend/src/assets`, including two homepage sliders, seven supplied course images, optimized display derivatives for the four matched course routes, and MERITX logos.
-- Submitting workflows found in the UI: account registration/login, exam registration, attempt start/save/submit, learner support, teacher paper submission, paper approval, and exam-status updates.
-- No public contact, admission enquiry, or newsletter form currently exists, so unused public lead endpoints were intentionally not invented.
+## Architecture & Technology Stack
 
-## Structure
+- **Frontend**: React 19, Vite, React Router 7, Lucide Icons, Vanilla CSS design system.
+- **Backend**: Node.js, Express, PostgreSQL (Neon / Managed Postgres), pg connection pool, JWT authentication, bcrypt, express-rate-limit.
+- **Financial Architecture**:
+  - Double-entry-ready transaction ledger with row-level locks (`SELECT ... FOR UPDATE`) and advisory transaction locks (`pg_advisory_xact_lock`).
+  - Strict zero-trust security: Roles, student IDs, balances, and course prices are never trusted from client input.
+  - Public course pricing privacy: Course prices, enrollment charges, and wallet balances are hidden from unauthenticated visitors with *"Login to view price"*.
+  - Strict data isolation: Teachers have access only to assigned courses, curriculum authoring, and authorized student rosters. Student wallet balances, deposit logs, and financial totals are completely hidden from faculty.
+  - DEMO MODE: Simulated deposit orders and withdrawals are clearly labeled with prominent badges across all UI views. No real banking transfers or false claims are made until live merchant credentials and compliance onboarding are completed.
 
-```text
-LGW-MERITX/
-  backend/
-    migrations/001_init.sql
-    migrations/002_question_banks.sql
-    src/
-      config/
-      controllers/
-      data/
-      middleware/
-      routes/
-      scripts/
-      services/
-      utils/
-      app.js
-      server.js
-    tests/
-    .env.example
-    package.json
-  frontend/
-    public/
-    src/
-      assets/
-      components/
-      context/
-      data/
-      lib/
-      pages/
-    .env.example
-    vercel.json
-    package.json
-  render.yaml
-```
+---
 
-## Environment variables
+## Role-Based Access Control (RBAC)
 
-Frontend (`frontend/.env`):
+The system supports three distinct authenticated roles:
 
-- `VITE_API_BASE_URL`: backend origin, without `/api`; locally `http://localhost:5000`.
-- `VITE_WHATSAPP_NUMBER`: business WhatsApp number with country code and digits only. The floating button is hidden until a valid number is configured.
-- `VITE_WHATSAPP_MESSAGE`: optional prefilled message.
-
-Backend (`backend/.env`):
-
-- `DATABASE_URL`: PostgreSQL connection string.
-- `DATABASE_SSL`: `true` for managed production PostgreSQL when required.
-- `JWT_SECRET`: minimum 32-character signing secret.
-- `FRONTEND_URLS`: comma-separated explicit CORS allowlist.
-- `SEED_DEMO_USERS`: `true` only for local/demo environments.
-- SMTP variables documented in `backend/.env.example` are optional.
-
-Never commit `.env` files. Vite variables are public browser configuration and must never contain database, JWT, or email secrets.
-
-## Windows local development
-
-Requirements: Node.js 20.19+ and PostgreSQL 14+ or a managed PostgreSQL URL.
-
-Terminal 1 — API:
-
-```powershell
-cd "F:\SW PROJECT\4.in_house\Meritx_project\New folder\Meritx Pro\LGW-MERITX\backend"
-npm install
-Copy-Item .env.example .env
-# Edit DATABASE_URL and JWT_SECRET in .env
-npm run db:migrate
-npm run dev
-```
-
-Terminal 2 — frontend:
-
-```powershell
-cd "F:\SW PROJECT\4.in_house\Meritx_project\New folder\Meritx Pro\LGW-MERITX\frontend"
-npm install
-Copy-Item .env.example .env
-# Set VITE_API_BASE_URL and VITE_WHATSAPP_NUMBER
-npm run dev
-```
-
-Vite normally serves `http://localhost:5173`; the API defaults to `http://localhost:5000`. If Vite selects another port, add that exact origin to `FRONTEND_URLS`.
-
-## API endpoints
-
-| Method | Endpoint | Purpose |
+| Role | Permissions & Accessible Sections | Route Protection |
 |---|---|---|
-| GET | `/api/health` | API and database readiness |
-| POST | `/api/auth/register` | Create a student account |
-| POST | `/api/auth/login` | Authenticate and issue an expiring JWT |
-| GET | `/api/auth/me` | Restore the authenticated profile |
-| GET | `/api/exams` | Public exam catalogue |
-| GET | `/api/questions?examId=...` | Role-aware sample questions |
-| GET | `/api/me/dashboard` | Student registrations and attempts |
-| POST | `/api/exams/register` | Persist an illustrative exam registration |
-| POST | `/api/attempts/start` | Start or resume an attempt |
-| POST | `/api/attempts/save` | Save answers and marked questions |
-| POST | `/api/attempts/submit` | Evaluate and persist an attempt |
-| GET/POST | `/api/teacher/papers` | List or submit paper metadata |
-| GET | `/api/teacher/question-banks` | List owned banks (or all banks for reviewers) |
-| GET | `/api/teacher/question-banks/:id` | Load a bank and its editable questions |
-| POST | `/api/teacher/question-banks/import` | Upload and extract one PDF/XLSX/XLS file (multipart `file`, 12 MB limit) |
-| PUT | `/api/teacher/question-banks/:id` | Save a validated draft revision |
-| POST | `/api/teacher/question-banks/submit` | Validate and submit a bank for approval |
-| GET | `/api/admin/overview` | Protected operational overview |
-| POST | `/api/admin/papers/approve` | Protected paper approval |
-| POST | `/api/admin/question-banks/approve` | Maker-checker approval and exam assignment |
-| POST | `/api/admin/question-banks/reject` | Reject a submitted bank with a reason |
-| POST | `/api/admin/question-banks/publish` | Atomically publish an approved bank as an examination |
-| PATCH | `/api/admin/exam` | Protected exam publication status |
-| POST | `/api/support` | Persist an authenticated support request |
-| GET | `/api/admin/tickets` | Protected support queue |
+| **Student** | Overview, My Courses, Browse Courses (with wallet enrollment), My Wallet, Add Money (Demo), Withdraw Money, Deposit History, Transaction History, Profile & Settings, Mock Tests & Results, Support. | `/student/*`, `/take/:id` |
+| **Teacher** | Faculty Workspace, Assigned Courses with enrollment counts & student rosters, Faculty Profile, Question Bank Importer (PDF/Excel), Question Bank Reviews, Paper Authoring. *(Zero financial/wallet visibility)* | `/teacher/*` |
+| **Admin / Superadmin** | Operations Overview, Finance Command Center (10 DB aggregates, reconciliation, CSV export), Student Wallet Management, Withdrawal Requests Workflow (Approve/Reject), Financial Reports, Catalog/Exam Management, Question Bank Approval. | `/admin/*`, `/superadmin/*` |
 
-No endpoint exposes raw password hashes or an unrestricted list of private lead records.
+### Default Demo Credentials
 
-## Question-bank import format
+For quick evaluation, pre-seeded demo accounts are available:
 
-Excel workbooks and CSV files may contain columns in any order. Recommended columns are `question_id`, `exam`, `subject`, `chapter`, `difficulty`, `question_type`, `question_text`, `option_a` through `option_d`, `correct_answers`, and `explanation`. Common case-insensitive aliases are recognized. Answers may be `B`, `Option B`, `A,C`, a one-based option number, or exact option text. PDF questions should be numbered, options should be labeled `A)`–`H)`, and answer lines should use `Answer: B`. Missing answers are never inferred; they are marked `Answer Required`.
+- **Demo Student**: `student@meritx.internal` / `StudentPass123!` (Pre-credited with ₹5,000 demo INR)
+- **Demo Teacher**: `teacher@meritx.internal` / `TeacherPass123!` (Assigned to JEE & NEET courses)
+- **Demo Admin**: `admin@meritx.internal` / `AdminPass123!`
 
-Inline LaTeX between `$...$` and display LaTeX between `$$...$$` render as MathML in both teacher preview and the live exam. Unicode superscripts, subscripts, chemical symbols, and ordinary text are preserved.
+New users can also self-register with any role (Student, Teacher, Admin) on the `/register` page.
 
-Scanned PDFs are detected when little or no selectable text is available. The UI reports an OCR warning; this release does not bundle an OCR engine or an external AI/OCR credential. Convert scanned files to searchable PDFs before upload. Embedded PDF image extraction is also not enabled; diagrams can be supplied with an HTTPS `Image URL` Excel column.
+---
 
-Migrations `002_question_banks.sql` and `003_examination_workflow.sql` add question banks, multi-answer questions, lifecycle/audit history, custom subjects, published examinations, and immutable per-attempt snapshots. Approved/published banks cannot be edited in place, and submitted attempts are evaluated against their stored snapshot.
+## Student Wallet & Course Enrollment Engine
 
-## Vercel frontend deployment
+### 1. Individual Student Wallet (INR ₹)
+- **Available Balance**: Immediately usable for course enrollments and withdrawal requests.
+- **Total Deposited**: Lifetime sum of verified top-ups.
+- **Total Spent on Courses**: Total debited atomically for course enrollments.
+- **Total Withdrawn**: Completed payouts approved by an administrator.
+- **Pending / Reserved Funds**: Funds locked during active withdrawal review.
+- **Transaction Ledger**: Complete, tamper-proof history of every credit, debit, refund, and adjustment with unique references and statuses (*Pending, Successful, Failed, Reversed*).
 
-1. Import the repository into Vercel.
-2. Set Root Directory to `frontend`.
-3. Use `npm run build` and output directory `dist` (Vite is normally auto-detected).
-4. Add `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com`.
-5. Add the digits-only `VITE_WHATSAPP_NUMBER` and optional `VITE_WHATSAPP_MESSAGE`.
-6. Deploy. `frontend/vercel.json` rewrites client-side routes to `index.html` for direct refreshes.
-7. Add the final Vercel origin to Render's `FRONTEND_URLS` and redeploy/restart the API.
+### 2. Course Enrollment with Atomic Wallet Debit
+When a student selects **Enroll Now** on any course:
+1. Fetches the verified course price from the database (`courses.fee * (1 - discount_percent/100)`).
+2. Displays a **Checkout Confirmation Modal** with course details, current balance, price, and projected balance after debit.
+3. If funds are insufficient, warns with the exact shortfall and provides an **Add Money** shortcut.
+4. If sufficient, executes an atomic database transaction:
+   - Acquires a row-level lock on the student's wallet row (`FOR UPDATE`).
+   - Verifies eligible balance again inside the lock.
+   - Atomically debits the course price.
+   - Creates the `course_enrollments` record.
+   - Writes a debit record to `wallet_transactions`.
+   - Prevents double-enrollment or duplicate debits.
+   - Automatically rolls back if any step fails.
+5. Immediately unlocks course access under **My Courses**.
 
-Do not put `DATABASE_URL`, `JWT_SECRET`, or SMTP credentials in Vercel's Vite variables.
+### 3. Add Money / Deposit (DEMO MODE)
+- Preset deposit amounts (₹500, ₹1,000, ₹2,000, ₹5,000) or custom input.
+- Payment method selector: UPI (PhonePe, Google Pay, Paytm), Debit/Credit Card, Net Banking.
+- Two-phase order creation & verification simulation:
+  - `POST /api/me/wallet/deposit/order` -> generates order in `payment_orders`.
+  - `POST /api/me/wallet/deposit/verify` -> verifies cryptographic signature, credits wallet atomically, updates order to `paid`, and writes transaction ledger.
+- Clear **DEMO MODE** notice throughout.
 
-## Render backend deployment
+### 4. Withdraw Money & Funds Reservation Policy
+- Available and eligible balance calculation.
+- Payout destination options: UPI ID (VPA) or Bank Account (Account Number, IFSC, Account Holder Name).
+- When a student submits a request:
+  - Funds are immediately reserved and deducted from `available_balance` to prevent double spending.
+  - Recorded in `withdrawal_requests` with status `pending`.
+- Admin Workflow:
+  - **Approve**: Marks request as `completed` / `approved`, records payout reference.
+  - **Reject**: Restores the locked funds back into the student's available balance atomically, records rejection reason, and updates student view.
 
-1. Create a managed PostgreSQL database in the same Render region as the API.
-2. Create a Blueprint from the repository's `render.yaml`, or create a Node Web Service manually.
-3. Confirm Root Directory `backend`, Build Command `npm ci`, Start Command `npm start`, and health path `/api/health`.
-4. Set `DATABASE_URL` to the managed database's internal connection string.
-5. Set `FRONTEND_URLS` to the exact Vercel production origin and explicitly approved preview origins.
-6. Keep the generated strong `JWT_SECRET`; set `DATABASE_SSL=true` if required by the database provider.
-7. Configure optional SMTP settings and `SUPPORT_TO_EMAIL` if notifications are wanted.
-8. Deploy and verify `https://YOUR-RENDER-SERVICE.onrender.com/api/health` before setting the frontend API URL.
+---
 
-The schema migration runs idempotently at startup. Production demo-account seeding is disabled in `render.yaml`.
+## Admin Finance Dashboard & Reports
 
-## Verification
+Accessible via `/admin/finance` or `/superadmin`:
+
+### 1. Ten Real Database Aggregate Summary Cards
+1. **Total Registered Students**
+2. **Total Registered Faculty**
+3. **Total Active Courses**
+4. **Total Course Enrollments**
+5. **Total Successful Deposits** (INR ₹)
+6. **Total Completed Withdrawals** (INR ₹)
+7. **Total Course Sales Revenue** (INR ₹)
+8. **Total Outstanding Student Wallet Liabilities** (INR ₹)
+9. **Total Pending Withdrawal Requests**
+10. **Total Pending Payment Transactions**
+
+### 2. Wallet Reconciliation & Capital Segregation
+Distinguishes:
+- **Total Student Deposits**: Gross funds injected into wallets (Held in Trust).
+- **Earned Course Sales Revenue**: Recognized platform revenue.
+- **Completed Withdrawals**: Settled payouts to students.
+- **Outstanding Wallet Liabilities**: Unspent student balances held in trust.
+- **Refunds & Reversals**: Corrected transactions.
+- **Settlement Pipeline Status**: Gateway integration status.
+
+### 3. Student Wallet Management Directory
+- Searchable by student name or email; filterable by account status.
+- Displays wallet balance, lifetime deposits, course spending, withdrawals, and enrolled courses.
+- **Student Dossier Modal**: Full view of an individual student's balance, enrolled courses, ledger transactions, and withdrawal requests.
+
+### 4. Withdrawal Request Workflow
+- Pending payout queue with student information, amount, method, and destination details.
+- Modal to **Approve & Mark Completed** (with payout reference) or **Reject & Restore Funds** (with mandatory reason).
+
+### 5. Financial Reports & CSV Export
+- Daily, weekly, and monthly reports.
+- Course-wise sales report (enrollments & revenue per course).
+- Student-wise payment activity report.
+- **1-Click CSV Export**: Streams real database ledger lines with audit headers for offline accounting.
+
+---
+
+## API Endpoints Reference
+
+### Public
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/health` | Health & PostgreSQL readiness check |
+| `GET` | `/api/exams` | Catalog exams (prices masked if not logged in) |
+| `GET` | `/api/exams/:id` | Exam details (prices masked if not logged in) |
+| `GET` | `/api/courses` | Published courses (prices masked if not logged in) |
+| `GET` | `/api/landing-content` | Public landing content |
+
+### Authentication
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/auth/register` | Register student, teacher, or admin account |
+| `POST` | `/api/auth/login` | Login and receive secure JWT token |
+| `GET` | `/api/auth/me` | Retrieve authenticated profile & role |
+
+### Student Profile & Courses
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/me/profile` | Get student academic profile |
+| `PUT` | `/api/me/profile` | Update student academic profile |
+| `GET` | `/api/me/courses` | List student's enrolled courses |
+| `POST` | `/api/me/courses/enroll` | Atomically debit wallet and enroll in course |
+| `GET` | `/api/me/dashboard` | Student exam attempts & registrations |
+
+### Student Wallet & Withdrawals
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/me/wallet` | Student wallet balance, stats, and ledger |
+| `POST` | `/api/me/wallet/deposit/order` | Create simulated deposit order |
+| `POST` | `/api/me/wallet/deposit/verify` | Verify deposit and credit wallet atomically |
+| `POST` | `/api/me/wallet/withdraw` | Submit withdrawal request and reserve funds |
+| `GET` | `/api/me/wallet/withdrawals` | Student's withdrawal request history |
+
+### Teacher Workspace (Isolated)
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/teacher/dashboard` | Assigned courses, student counts & rosters |
+| `GET` | `/api/teacher/profile` | Get faculty profile |
+| `PUT` | `/api/teacher/profile` | Update faculty credentials and bio |
+| `GET` | `/api/teacher/papers` | Author papers |
+| `POST` | `/api/teacher/question-banks/import` | Upload Excel/PDF MCQs |
+
+### Admin Finance & Operations
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/admin/finance/overview` | 10 DB aggregates & reconciliation metrics |
+| `GET` | `/api/admin/finance/wallets` | Searchable student wallet directory |
+| `GET` | `/api/admin/finance/wallets/:id` | Student wallet dossier |
+| `GET` | `/api/admin/finance/withdrawals` | Admin withdrawal requests queue |
+| `POST` | `/api/admin/finance/withdrawals/:id` | Approve or reject withdrawal request |
+| `GET` | `/api/admin/finance/reports` | Daily, weekly, monthly report aggregates |
+| `GET` | `/api/admin/finance/reports/export-csv` | Download CSV financial ledger |
+| `GET/POST/PUT/DELETE` | `/api/admin/courses` | Manage course catalog |
+
+---
+
+## Local Development & Setup
+
+### Requirements
+- Node.js 20+
+- PostgreSQL database (Neon or local PostgreSQL 14+)
+
+### 1. Backend Setup
 
 ```powershell
 cd backend
+npm install
+
+# Copy environment variables
+Copy-Item .env.example .env
+
+# Configure your database connection in .env:
+# DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+# JWT_SECRET=your_32_character_super_secret_key_here
+
+# Run migrations (automatically creates all tables, wallets, and demo seed data)
+node src/scripts/migrate.js
+
+# Run test suite (All 37 unit and integration tests)
 npm test
 
-cd ..\frontend
-npm run build
+# Start backend development server
+npm run dev
 ```
 
-The backend suite covers endpoint validation, health, CORS, safe database failures, email-provider failure after persistence, rate limiting, Excel/CSV extraction, an exact 30-question workbook, text-PDF extraction, missing answers, file-signature rejection, and exact multiple-correct evaluation. Run `node tests/e2e-live.mjs` only against a development database to create and verify a complete 30-question teacher/admin/student workflow. See `AUDIT_AND_TEST_REPORT.md` for recorded results and limitations.
+### 2. Frontend Setup
 
-## Product boundaries
+```powershell
+cd frontend
+npm install
 
-Rankings, prize pools, and wallets remain illustrative. Paid examination enrollment uses Razorpay Standard Checkout when Razorpay is configured; the default `RAZORPAY_MODE=test` accepts simulated test payments only. The question bank is representative and is not affiliated with NTA or IITs.
+# Build production bundle
+npm run build
 
-## Razorpay Test Mode
+# Start frontend development server
+npm run dev
+```
 
-1. In the Razorpay Dashboard, switch to **Test Mode** and generate a test Key ID and Key Secret.
-2. Copy `backend/.env.example` to `backend/.env` if needed, then set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and keep `RAZORPAY_MODE=test`.
-3. Set a separate `RAZORPAY_WEBHOOK_SECRET`, then add `https://YOUR_API_HOST/api/payments/webhook` in the Razorpay Test Mode dashboard for the `payment.captured` and `payment.failed` events.
-4. Restart the backend. Only the Key ID is returned to the browser; the Key Secret and Webhook Secret remain server-side.
-5. Publish a course, set its Admin price above ₹0, and link an examination to it. The latest course price is read by the backend when the student starts checkout.
-6. Use Razorpay's documented Test Mode payment methods. Enrollment is created only after HMAC signature verification and a trusted Razorpay API fetch confirms the expected order, INR amount, and `captured` status.
+Access the frontend at `http://localhost:5173`. The backend runs on `http://localhost:5000`.
 
-The immediate success path verifies the checkout signature and fetches the payment from Razorpay before enrollment. The signed webhook path independently handles captured/failed notifications, repeated delivery, and failed events arriving after a successful capture without duplicating or revoking enrollment. To move to live payments later, complete Razorpay activation and production testing first, explicitly set `RAZORPAY_MODE=live`, and replace both credentials with matching `rzp_live_...` keys. Test and live key prefixes are checked so they cannot be mixed accidentally.
+---
+
+## Production Payment Activation Checklist (Razorpay / UPI)
+
+Currently, the system operates in **DEMO MODE** with simulated transactions. To activate live Indian payments via Razorpay (including UPI, Google Pay, PhonePe, Cards, Net Banking):
+
+1. **Merchant Onboarding & KYC**:
+   - Complete merchant registration on the [Razorpay Dashboard](https://dashboard.razorpay.com).
+   - Submit business documentation, bank account proof, and GSTIN/PAN verification.
+2. **Configure Environment Variables in `backend/.env`**:
+   ```ini
+   PAYMENT_PROVIDER=razorpay
+   PAYMENT_MODE=live
+   RAZORPAY_KEY_ID=rzp_live_xxxxxxxxxxxxxx
+   RAZORPAY_KEY_SECRET=your_live_key_secret_here
+   RAZORPAY_WEBHOOK_SECRET=your_live_webhook_secret_here
+   ```
+3. **Register Webhook Endpoint**:
+   - In Razorpay Dashboard > Settings > Webhooks, add:
+     `https://your-domain.com/api/payments/webhook`
+   - Select events: `payment.captured`, `payment.failed`, `order.paid`.
+4. **Payouts Activation (for Real Withdrawals)**:
+   - For real student withdrawals, onboard with **Razorpay X** or an approved payout partner.
+   - Complete Payout KYC and fund the current account.
+   - Toggle payout execution in `platform.service.js` under `reviewWithdrawal()`.

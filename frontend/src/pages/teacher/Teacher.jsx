@@ -1,6 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, ClipboardList, CheckCircle2, Plus, Send, UploadCloud, FileSpreadsheet, Eye, Save, Trash2, AlertTriangle, X } from 'lucide-react';
+import {
+  BookOpen,
+  ClipboardList,
+  CheckCircle2,
+  Plus,
+  Send,
+  UploadCloud,
+  FileSpreadsheet,
+  Eye,
+  Save,
+  Trash2,
+  AlertTriangle,
+  X,
+  Users,
+  GraduationCap,
+  ShieldCheck,
+  RefreshCw,
+  ArrowUpRight,
+  User,
+  Settings,
+} from 'lucide-react';
 import { Shell, Stat, Loading, Empty } from '../../components/Layouts';
 import QuestionRenderer from '../../components/QuestionRenderer';
 import { api } from '../../lib/api';
@@ -48,12 +68,522 @@ function useBanks() {
   return { banks, refresh, token };
 }
 
+export function useTeacherDashboard() {
+  const { token } = useAuth();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const refresh = () => {
+    setLoading(true);
+    return api('/teacher/dashboard', { token })
+      .then((res) => {
+        setData(res);
+        setError('');
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => {
+    if (token) refresh();
+  }, [token]);
+  return { data, error, loading, refresh, token };
+}
+
 export function TeacherDashboard() {
-  const { papers } = useTeacher(); const { banks } = useBanks();
-  return <Shell title="Faculty workspace" kicker="TEACHER DASHBOARD" description="Design better questions. Build stronger assessments." action={<Link to="/teacher/import" className="btn btn-primary small">Import Question Bank <UploadCloud size={16}/></Link>}>
-    <div className="grid-3"><Stat icon={BookOpen} label="Question Banks" value={banks?.length || 0} delta="Imported and authored"/><Stat icon={ClipboardList} label="Papers Submitted" value={papers?.length || 0} tone="cyan" delta="Awaiting review"/><Stat icon={CheckCircle2} label="Approved Banks" value={banks?.filter((bank) => bank.status === 'approved').length || 0} tone="green" delta="Approved by admin"/></div>
-    <div className="panel" style={{ marginTop: 22 }}><div className="panel-head"><h3>Recent question banks</h3><Link className="action-link" to="/teacher/import">Import new →</Link></div>{!banks ? <Loading/> : banks.length ? <BankTable banks={banks}/> : <Empty title="No question banks" text="Upload a PDF or Excel question bank to begin."/>}</div>
-  </Shell>;
+  const { papers } = useTeacher();
+  const { banks } = useBanks();
+  const { data: dashData } = useTeacherDashboard();
+  const [selectedCourseRoster, setSelectedCourseRoster] = useState(null);
+
+  const assignedCourses = dashData?.assignedCourses || [];
+  const totalStudents = dashData?.totalStudents || 0;
+
+  return (
+    <Shell
+      title={`Faculty workspace · ${dashData?.teacher?.name || 'Instructor'}`}
+      kicker="TEACHER DASHBOARD"
+      description="Design better questions. Monitor course enrollments and build assessments."
+      action={
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Link to="/teacher/courses" className="btn btn-outline small">
+            <GraduationCap size={15} /> My Courses
+          </Link>
+          <Link to="/teacher/import" className="btn btn-primary small">
+            Import Question Bank <UploadCloud size={16} />
+          </Link>
+        </div>
+      }
+    >
+      <div className="grid-4">
+        <Stat
+          icon={GraduationCap}
+          label="Assigned Courses"
+          value={assignedCourses.length}
+          delta="Authorized curriculum"
+        />
+        <Stat
+          icon={Users}
+          label="Enrolled Students"
+          value={totalStudents}
+          tone="green"
+          delta="Active learners"
+        />
+        <Stat
+          icon={BookOpen}
+          label="Question Banks"
+          value={banks?.length || 0}
+          delta="Imported & authored"
+        />
+        <Stat
+          icon={ClipboardList}
+          label="Papers Submitted"
+          value={papers?.length || 0}
+          tone="cyan"
+          delta="Awaiting review"
+        />
+      </div>
+
+      {/* Privacy Isolation Notice */}
+      <div className="panel" style={{ marginTop: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ShieldCheck size={20} color="#2563eb" />
+          <h4 style={{ margin: 0 }}>Faculty Privacy & Data Isolation</h4>
+        </div>
+        <p className="muted" style={{ fontSize: 13, lineHeight: 1.8, marginTop: 8 }}>
+          Faculty accounts are strictly scoped to assigned courses, question creation, and enrolled student rosters.
+          Private student wallet balances, deposit records, withdrawal details, and administrative financial dashboards
+          are completely isolated from teacher views.
+        </p>
+      </div>
+
+      {/* Assigned Courses Section with Student Roster View */}
+      <div className="panel" style={{ marginTop: 22 }}>
+        <div className="panel-head">
+          <div>
+            <h3>My Assigned Courses</h3>
+            <p className="muted">Live student enrollment counts and class rosters.</p>
+          </div>
+          <Link to="/teacher/courses" className="action-link">
+            Full course view →
+          </Link>
+        </div>
+        {assignedCourses.length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Course Name</th>
+                  <th>Category / Exam</th>
+                  <th>Enrolled Students</th>
+                  <th>Mock Exams</th>
+                  <th>Status</th>
+                  <th>Student Roster</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignedCourses.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <strong>{c.name}</strong>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.shortDescription || '—'}</div>
+                    </td>
+                    <td>
+                      {c.category} · {c.examType}
+                    </td>
+                    <td>
+                      <strong style={{ color: '#2563eb' }}>{c.enrolledStudentCount || 0}</strong> students
+                    </td>
+                    <td>{c.publishedExamCount || 0} exams</td>
+                    <td>
+                      <span className={`tag ${c.status === 'published' ? 'green' : 'orange'}`}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-soft small"
+                        onClick={() => setSelectedCourseRoster(c)}
+                      >
+                        <Users size={14} /> View Roster ({c.enrolledStudents?.length || 0})
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty
+            title="No courses assigned"
+            text="Contact the administrator to be assigned as lead faculty for active courses."
+          />
+        )}
+      </div>
+
+      {/* Student Roster Modal */}
+      {selectedCourseRoster && (
+        <div className="checkout-modal-backdrop" onClick={() => setSelectedCourseRoster(null)}>
+          <div className="checkout-modal-card" style={{ maxWidth: 650 }} onClick={(e) => e.stopPropagation()}>
+            <div className="checkout-modal-header">
+              <div>
+                <span className="demo-pill">STUDENT ROSTER</span>
+                <h3>{selectedCourseRoster.name}</h3>
+                <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {selectedCourseRoster.enrolledStudents?.length || 0} enrolled students (Wallet/Financial data excluded)
+                </p>
+              </div>
+              <button
+                className="btn-icon-close"
+                onClick={() => setSelectedCourseRoster(null)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {selectedCourseRoster.enrolledStudents?.length ? (
+              <div className="table-scroll" style={{ maxHeight: 350, overflowY: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Student Name</th>
+                      <th>Email</th>
+                      <th>Enrollment Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedCourseRoster.enrolledStudents.map((s, idx) => (
+                      <tr key={s.studentId || idx}>
+                        <td>{idx + 1}</td>
+                        <td><strong>{s.name}</strong></td>
+                        <td>{s.email}</td>
+                        <td>{new Date(s.enrolledAt).toLocaleDateString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty title="No students enrolled yet" text="When students enroll via their wallet, they will appear here." />
+            )}
+            <div style={{ textAlign: 'right', marginTop: 18 }}>
+              <button className="btn btn-outline small" onClick={() => setSelectedCourseRoster(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Question Banks */}
+      <div className="panel" style={{ marginTop: 22 }}>
+        <div className="panel-head">
+          <h3>Recent question banks</h3>
+          <Link className="action-link" to="/teacher/import">
+            Import new →
+          </Link>
+        </div>
+        {!banks ? (
+          <Loading />
+        ) : banks.length ? (
+          <BankTable banks={banks} />
+        ) : (
+          <Empty title="No question banks" text="Upload a PDF or Excel question bank to begin." />
+        )}
+      </div>
+    </Shell>
+  );
+}
+
+export function TeacherCourses() {
+  const { data, loading, refresh } = useTeacherDashboard();
+  const [selectedCourseRoster, setSelectedCourseRoster] = useState(null);
+  const assignedCourses = data?.assignedCourses || [];
+
+  return (
+    <Shell
+      title="My Assigned Courses"
+      kicker="CURRICULUM MANAGEMENT"
+      description="View assigned courses, syllabus delivery, and authorized student enrollment rosters."
+    >
+      <div className="panel">
+        <div className="panel-head">
+          <div>
+            <h3>Assigned Courses ({assignedCourses.length})</h3>
+            <p className="muted">Students enrolled via wallet balance appear in the roster below.</p>
+          </div>
+          <button className="btn btn-outline small" onClick={refresh}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
+
+        {assignedCourses.length ? (
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Course Name</th>
+                  <th>Category</th>
+                  <th>Exam Type</th>
+                  <th>Enrolled Students</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignedCourses.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <strong>{c.name}</strong>
+                    </td>
+                    <td>{c.category}</td>
+                    <td>{c.examType}</td>
+                    <td>
+                      <strong style={{ color: '#2563eb' }}>{c.enrolledStudentCount || 0}</strong> students
+                    </td>
+                    <td>{c.durationDays || 180} days</td>
+                    <td>
+                      <span className={`tag ${c.status === 'published' ? 'green' : 'orange'}`}>
+                        {c.status}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-soft small"
+                        onClick={() => setSelectedCourseRoster(c)}
+                      >
+                        <Users size={14} /> Student Roster ({c.enrolledStudents?.length || 0})
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty
+            title="No assigned courses"
+            text="You have not been assigned to any courses yet. Administrators assign faculty to courses."
+          />
+        )}
+      </div>
+
+      {selectedCourseRoster && (
+        <div className="checkout-modal-backdrop" onClick={() => setSelectedCourseRoster(null)}>
+          <div className="checkout-modal-card" style={{ maxWidth: 650 }} onClick={(e) => e.stopPropagation()}>
+            <div className="checkout-modal-header">
+              <div>
+                <span className="demo-pill">STUDENT ROSTER</span>
+                <h3>{selectedCourseRoster.name}</h3>
+                <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {selectedCourseRoster.enrolledStudents?.length || 0} students enrolled
+                </p>
+              </div>
+              <button
+                className="btn-icon-close"
+                onClick={() => setSelectedCourseRoster(null)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {selectedCourseRoster.enrolledStudents?.length ? (
+              <div className="table-scroll" style={{ maxHeight: 350, overflowY: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Student Name</th>
+                      <th>Email</th>
+                      <th>Enrollment Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedCourseRoster.enrolledStudents.map((s, idx) => (
+                      <tr key={s.studentId || idx}>
+                        <td>{idx + 1}</td>
+                        <td><strong>{s.name}</strong></td>
+                        <td>{s.email}</td>
+                        <td>{new Date(s.enrolledAt).toLocaleDateString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty title="No students enrolled yet" text="When students enroll, they will be listed here." />
+            )}
+            <div style={{ textAlign: 'right', marginTop: 18 }}>
+              <button className="btn btn-outline small" onClick={() => setSelectedCourseRoster(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+export function TeacherProfile() {
+  const { token, user } = useAuth();
+  const [profile, setProfile] = useState({
+    designation: '',
+    department: '',
+    specialization: '',
+    experienceYears: 5,
+    bio: '',
+    phone: '',
+  });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (token) {
+      api('/teacher/profile', { token })
+        .then((res) => {
+          if (res.profile) {
+            setProfile({
+              designation: res.profile.designation || '',
+              department: res.profile.department || '',
+              specialization: res.profile.specialization || '',
+              experienceYears: res.profile.experienceYears || 5,
+              bio: res.profile.bio || '',
+              phone: res.profile.phone || '',
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [token]);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg('');
+    setErr('');
+    try {
+      await api('/teacher/profile', {
+        method: 'PUT',
+        token,
+        body: {
+          ...profile,
+          experienceYears: Number(profile.experienceYears),
+        },
+      });
+      setMsg('Teacher profile updated successfully.');
+    } catch (e) {
+      setErr(e.message || 'Failed to update profile.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Shell
+      title="Faculty Profile"
+      kicker="PROFILE & CREDENTIALS"
+      description="Update your academic credentials, teaching subject, and faculty biography."
+    >
+      <div className="panel" style={{ maxWidth: 650, margin: '0 auto' }}>
+        {msg && <div className="alert success">{msg}</div>}
+        {err && <div className="alert error">{err}</div>}
+
+        {loading ? (
+          <Loading />
+        ) : (
+          <form onSubmit={handleSave}>
+            <div className="grid-2">
+              <div className="field">
+                <label>Faculty Name</label>
+                <input type="text" disabled value={user?.name || ''} />
+              </div>
+              <div className="field">
+                <label>Email Address</label>
+                <input type="email" disabled value={user?.email || ''} />
+              </div>
+            </div>
+
+            <div className="grid-2" style={{ marginTop: 14 }}>
+              <div className="field">
+                <label>Designation</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Senior Physics Faculty"
+                  value={profile.designation}
+                  onChange={(e) => setProfile({ ...profile, designation: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Department</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Physical Sciences"
+                  value={profile.department}
+                  onChange={(e) => setProfile({ ...profile, department: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid-2" style={{ marginTop: 14 }}>
+              <div className="field">
+                <label>Specialization</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Mechanics & Electromagnetism"
+                  value={profile.specialization}
+                  onChange={(e) => setProfile({ ...profile, specialization: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Teaching Experience (Years)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="60"
+                  value={profile.experienceYears}
+                  onChange={(e) => setProfile({ ...profile, experienceYears: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="field" style={{ marginTop: 14 }}>
+              <label>Phone Number</label>
+              <input
+                type="tel"
+                placeholder="+91 98765 43210"
+                value={profile.phone}
+                onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+              />
+            </div>
+
+            <div className="field" style={{ marginTop: 14 }}>
+              <label>Faculty Bio</label>
+              <textarea
+                rows="4"
+                placeholder="Briefly describe your teaching philosophy and academic accomplishments..."
+                value={profile.bio}
+                onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{ marginTop: 18 }}
+              disabled={busy}
+            >
+              {busy ? 'Saving...' : 'Save Faculty Profile'}
+            </button>
+          </form>
+        )}
+      </div>
+    </Shell>
+  );
 }
 
 function BankTable({ banks, onOpen }) {

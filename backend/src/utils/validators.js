@@ -7,7 +7,14 @@ const imageValue = z.string().trim().max(1_900_000).refine(
 ).nullable().optional();
 export const schemas = {
   login: z.object({ email: z.email().max(254).transform((value) => value.toLowerCase()), password: z.string().min(1).max(128) }),
-  register: z.object({ name: text(2, 120), email: z.email().max(254).transform((value) => value.toLowerCase()), password: z.string().min(8).max(128), target: z.enum(['JEE Main', 'JEE Advanced', 'NEET UG']).default('JEE Main') }),
+  googleCredential: z.object({ credential: text(40, 10000), target: z.enum(['JEE Main', 'JEE Advanced', 'NEET UG']).default('JEE Main') }),
+  register: z.object({
+    name: text(2, 120),
+    email: z.email().max(254).transform((value) => value.toLowerCase()),
+    password: z.string().min(8).max(128),
+    target: z.enum(['JEE Main', 'JEE Advanced', 'NEET UG']).default('JEE Main'),
+    role: z.enum(['student', 'teacher', 'admin']).default('student')
+  }),
   examRegistration: z.object({ examId: text(1, 80) }),
   paymentOrder: z.object({ examId: text(1, 80) }),
   paymentVerification: z.object({
@@ -48,8 +55,57 @@ export const schemas = {
     imageUrl: imageValue, description: z.string().trim().max(2000).default(''),
     tag: z.string().trim().max(80).default(''), status: z.enum(['upcoming', 'published', 'cancelled']),
     registrationOpen: z.boolean().default(true),
+    schedule: z.object({ startsAt: z.iso.datetime().nullable().optional(), endsAt: z.iso.datetime().nullable().optional(), registrationOpensAt: z.iso.datetime().nullable().optional(), registrationClosesAt: z.iso.datetime().nullable().optional(), maximumParticipants: z.number().int().min(1).max(1000000).nullable().optional(), eligibleStudentIds: z.array(text(1, 100)).max(500).default([]), timezone: z.string().max(64).default('Asia/Kolkata') }).default({}),
+    prizeConfig: z.object({ enabled: z.boolean().default(false), method: z.enum(['fixed','percentage','multiplier']).default('fixed'), first: z.number().min(0).max(10000000).default(0), second: z.number().min(0).max(10000000).default(0), third: z.number().min(0).max(10000000).default(0) }).default({}).refine((prize) => prize.method !== 'percentage' || prize.first + prize.second + prize.third <= 100, 'Prize percentages cannot exceed 100%').refine((prize) => prize.method !== 'multiplier' || prize.first + prize.second + prize.third <= 1, 'Prize multipliers cannot exceed the pool'),
   }),
+  demoPrizeDistribution: z.object({ examId: text(1,80), studentId: text(1,100), rank: z.number().int().min(1).max(3) }),
   landingContent: z.record(z.string(), z.union([z.string().max(5000), z.number(), z.boolean(), z.null()])),
   examStatus: z.object({ id: text(1, 80), status: z.enum(['upcoming', 'published', 'cancelled']) }),
   support: z.object({ subject: text(2, 100), message: text(10, 1000) }),
+  walletDepositOrder: z.object({
+    amount: z.number().min(10, 'Minimum deposit is ₹10').max(500000, 'Maximum deposit is ₹5,00,000'),
+    paymentMethod: z.enum(['upi_phonepe', 'upi_gpay', 'upi_paytm', 'upi_generic', 'card', 'netbanking', 'demo']).default('upi_phonepe'),
+  }),
+  walletDepositVerify: z.object({
+    orderId: text(1, 100),
+    gatewayPaymentId: z.string().trim().max(100).optional(),
+    gatewaySignature: z.string().trim().max(256).optional(),
+    isDemoSimulated: z.boolean().default(true),
+  }),
+  walletWithdrawalRequest: z.object({
+    amount: z.number().min(10, 'Minimum withdrawal is ₹10').max(100000, 'Maximum single withdrawal is ₹1,00,000'),
+    payoutMethod: z.enum(['bank_transfer', 'upi']),
+    payoutDetails: z.object({
+      accountHolder: z.string().trim().max(120).optional(),
+      accountNumber: z.string().trim().max(35).optional(),
+      ifsc: z.string().trim().max(20).optional(),
+      bankName: z.string().trim().max(100).optional(),
+      upiId: z.string().trim().max(100).optional(),
+    }),
+  }),
+  adminWithdrawalAction: z.object({
+    id: text(1, 100),
+    action: z.enum(['approve', 'reject']),
+    rejectionReason: z.string().trim().max(500).optional(),
+    notes: z.string().trim().max(500).optional(),
+  }),
+  courseEnrollment: z.object({
+    courseId: text(1, 100),
+  }),
+  studentProfileUpdate: z.object({
+    phone: z.string().trim().max(25).optional(),
+    bio: z.string().trim().max(1000).optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+    targetExam: z.string().trim().max(100).optional(),
+    academicYear: z.string().trim().max(20).optional(),
+  }),
+  teacherProfileUpdate: z.object({
+    phone: z.string().trim().max(25).optional(),
+    bio: z.string().trim().max(1000).optional(),
+    designation: z.string().trim().max(120).optional(),
+    department: z.string().trim().max(120).optional(),
+    specialization: z.string().trim().max(200).optional(),
+    experienceYears: z.number().int().min(0).max(80).optional(),
+  }),
 };

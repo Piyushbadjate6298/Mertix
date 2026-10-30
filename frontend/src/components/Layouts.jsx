@@ -20,6 +20,10 @@ import {
   Bell,
   ChevronRight,
   ArrowUpRight,
+  ArrowDownLeft,
+  FileSpreadsheet,
+  UserCheck,
+  Plus,
 } from "lucide-react";
 import Brand from "./Brand";
 import { useAuth } from "../context/AuthContext";
@@ -27,30 +31,46 @@ import "./Layouts.css";
 export const routes = {
   student: [
     ["/student", "Overview", LayoutDashboard],
-    ["/exams", "Explore Exams", ClipboardList],
+    ["/student/courses", "My Courses", BookOpen],
+    ["/student/browse", "Browse Courses", GraduationCap],
+    ["/student/wallet", "My Wallet", Wallet],
+    ["/student/deposit", "Add Money", Plus],
+    ["/student/withdraw", "Withdraw Money", ArrowUpRight],
+    ["/student/deposits", "Deposit History", ArrowDownLeft],
+    ["/student/transactions", "Transactions", ClipboardList],
+    ["/student/profile", "Profile & Settings", Settings],
     ["/student/results", "My Results", BarChart3],
-    ["/student/rewards", "Rewards & Wallet", Wallet],
+    ["/student/explore", "Explore Exams", ClipboardList],
     ["/student/support", "Support", LifeBuoy],
   ],
   teacher: [
     ["/teacher", "Dashboard", LayoutDashboard],
+    ["/teacher/courses", "Assigned Courses", GraduationCap],
+    ["/teacher/profile", "Faculty Profile", Settings],
     ["/teacher/import", "Import Question Bank", BookOpen],
     ["/teacher/questions", "Question Bank", BookOpen],
     ["/teacher/papers", "My Papers", ClipboardList],
   ],
   admin: [
     ["/admin", "Dashboard", LayoutDashboard],
+    ["/admin/finance", "Finance Command", Wallet],
+    ["/admin/wallets", "Student Wallets", Users],
+    ["/admin/withdrawals", "Withdrawals Workflow", ArrowUpRight],
+    ["/admin/reports", "Financial Reports", FileSpreadsheet],
+    ["/admin/courses", "Courses", GraduationCap],
     ["/admin/exams", "Exam Management", ClipboardList],
     ["/admin/students", "Students", Users],
     ["/admin/papers", "Paper Reviews", BookOpen],
     ["/admin/question-banks", "Question Bank Reviews", BookOpen],
     ["/admin/import", "Import Question Bank", BookOpen],
-    ["/admin/courses", "Courses", GraduationCap],
     ["/admin/configuration", "Platform Configuration", Settings],
     ["/admin/support", "Support Tickets", LifeBuoy],
   ],
   superadmin: [
     ["/superadmin", "Finance Overview", LayoutDashboard],
+    ["/superadmin/wallets", "Student Wallets", Users],
+    ["/superadmin/withdrawals", "Withdrawals Workflow", ArrowUpRight],
+    ["/superadmin/reports", "Financial Reports", FileSpreadsheet],
     ["/superadmin/payments", "Transactions", CreditCard],
     ["/superadmin/audit", "Audit Log", ShieldCheck],
     ["/admin/exams", "Exam Operations", ClipboardList],
@@ -219,6 +239,18 @@ export function Shell({ children, title, kicker, description, action }) {
               <strong>{user?.name}</strong>
               <small>{user?.role}</small>
             </div>
+            <button
+              className="btn btn-outline small"
+              onClick={() => {
+                logout();
+                nav("/");
+              }}
+              title="Sign out of your workspace"
+              style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 10, padding: "7px 12px", color: "#e05d69", borderColor: "#fecdd3" }}
+            >
+              <LogOut size={14} />
+              <span>Sign out</span>
+            </button>
           </div>
         </header>
         <main className="app-content">

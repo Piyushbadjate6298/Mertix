@@ -16,6 +16,22 @@ export function createAuthMiddleware({ env, service }) {
       next(new AppError(401, 'Your session is invalid or expired', 'INVALID_SESSION'));
     }
   };
+  const optionalAuthenticate = async (req, _res, next) => {
+    const value = req.get('authorization') || '';
+    const token = value.startsWith('Bearer ') ? value.slice(7) : '';
+    if (!token) {
+      req.user = null;
+      return next();
+    }
+    try {
+      const payload = jwt.verify(token, env.jwtSecret);
+      const user = await service.findUserById(payload.sub);
+      req.user = user || null;
+    } catch {
+      req.user = null;
+    }
+    next();
+  };
   const authorize = (...roles) => (req, _res, next) => roles.includes(req.user?.role) ? next() : next(new AppError(403, 'Not authorized for this action', 'FORBIDDEN'));
-  return { authenticate, authorize };
+  return { authenticate, optionalAuthenticate, authorize };
 }

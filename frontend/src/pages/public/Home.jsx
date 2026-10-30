@@ -16,6 +16,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { SiteFooter, SiteHeader } from "../../components/Layouts";
+import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
 import { ExamCard } from "./Exams";
 import sliderUpsc from "../../assets/Images/Sliders/8-display.jpg";
@@ -59,6 +60,7 @@ const features = [
 ];
 
 export default function Home() {
+  const { token } = useAuth();
   const [active, setActive] = useState(0);
   const [exams, setExams] = useState([]);
   const [landing, setLanding] = useState(null);
@@ -75,9 +77,9 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
-    api('/exams').then((examData) => setExams(examData?.exams || [])).catch(() => {});
+    api('/exams', { token }).then((examData) => setExams(examData?.exams || [])).catch(() => {});
     api('/landing-content').then((contentData) => setLanding(contentData?.content?.about_courses || null)).catch(() => {});
-  }, []);
+  }, [token]);
 
   const slide = slides[active];
   return (

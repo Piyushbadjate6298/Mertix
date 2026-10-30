@@ -90,23 +90,43 @@
   border-right: 1px solid #e4ebf5;
   display: flex;
   flex-direction: column;
-  padding: 24px 14px;
+  padding: 18px 12px;
   z-index: 31;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.app-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+.app-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app-sidebar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+.app-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 .sidebar-brand {
-  padding: 4px 12px 34px;
+  padding: 4px 10px 18px;
+  flex-shrink: 0;
 }
 .sidebar-label {
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.17em;
   color: #a8b6c9;
-  padding: 0 15px 17px;
+  padding: 0 12px 10px;
+  flex-shrink: 0;
 }
 .side-nav {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
+  flex: 1 0 auto;
 }
 .side-link {
   border: 0;
@@ -114,14 +134,15 @@
   color: #65738b;
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 13px 15px;
-  border-radius: 11px;
+  gap: 11px;
+  padding: 9px 13px;
+  border-radius: 9px;
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
   width: 100%;
   text-align: left;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 .side-link:hover,
 .side-link.active {
@@ -132,13 +153,21 @@
   box-shadow: inset 3px 0 0 #2275ff;
 }
 .sidebar-bottom {
-  margin-top: auto;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #edf2f7;
+  flex-shrink: 0;
 }
 .sidebar-help {
   background: linear-gradient(140deg, #eaf7ff, #eff0ff);
-  padding: 17px;
-  border-radius: 15px;
-  margin: 0 5px 18px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  margin: 0 4px 12px;
+}
+@media (max-height: 860px) {
+  .sidebar-help {
+    display: none;
+  }
 }
 .sidebar-help .help-icon {
   color: #166be9;
@@ -156,6 +185,11 @@
 }
 .logout {
   color: #e05d69;
+  font-weight: 800;
+}
+.logout:hover {
+  background: #fef2f2;
+  color: #dc2626;
 }
 .app-main {
   margin-left: 253px;

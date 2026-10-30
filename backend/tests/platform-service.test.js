@@ -35,6 +35,7 @@ function databaseWithExamOverride({ fee, discountPercent }) {
       if (sql.includes('FROM exam_overrides')) return { rows: [override] };
       if (sql.includes('FROM published_exams')) return { rows: [] };
       if (sql.includes('FROM courses')) return { rows: [course] };
+      if (sql.includes('FROM registrations')) return { rows: [] };
       throw new Error(`Unexpected query: ${sql}`);
     },
   };

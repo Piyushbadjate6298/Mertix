@@ -23,6 +23,7 @@ function makeService(overrides = {}) {
     listExams: async () => [],
     listQuestions: async () => [],
     studentDashboard: async () => ({ registrations: [], attempts: [], rewards: [] }),
+    demoWallet: async () => ({ mode: 'demo', availableBalance: 0, transactions: [] }),
     registerExam: async () => ({ registration: { id: 'reg-1' }, payment: { id: 'pay-1' } }),
     paymentConfiguration: () => ({ configured: false, mode: 'test' }),
     createPaymentOrder: async () => ({ free: false, keyId: 'rzp_test_public', order: { id: 'order-1', amount: 49900, currency: 'INR' } }),
@@ -111,6 +112,23 @@ test('payment order and verification endpoints require a student session', async
   const verified = await request(makeApp()).post('/api/payments/verify').set('Authorization', `Bearer ${token}`).send({ razorpayOrderId: 'order-1', razorpayPaymentId: 'pay-1', razorpaySignature: 'a'.repeat(64) });
   assert.equal(verified.status, 200);
   assert.equal(verified.body.enrollmentConfirmed, true);
+});
+
+test('demo wallet is private to the authenticated student', async () => {
+  const studentToken = jwt.sign({ role: 'student' }, env.jwtSecret, { subject: student.id, expiresIn: '1h' });
+  const admin = { ...student, id: 'admin-test', role: 'admin' };
+  const adminToken = jwt.sign({ role: 'admin' }, env.jwtSecret, { subject: admin.id, expiresIn: '1h' });
+  const app = makeApp(makeService({ findUserById: async (id) => id === admin.id ? admin : student }));
+  assert.equal((await request(app).get('/api/me/wallet')).status, 401);
+  assert.equal((await request(app).get('/api/me/wallet').set('Authorization', `Bearer ${studentToken}`)).status, 200);
+  assert.equal((await request(app).get('/api/me/wallet').set('Authorization', `Bearer ${adminToken}`)).status, 403);
+});
+
+test('Google sign-in fails closed until a client ID is configured', async () => {
+  const response = await request(makeApp(makeService(), undefined, { ...env, googleClientId: '' }))
+    .post('/api/auth/google').send({ credential: 'x'.repeat(80), target: 'JEE Main' });
+  assert.equal(response.status, 503);
+  assert.equal(response.body.error.code, 'GOOGLE_AUTH_NOT_CONFIGURED');
 });
 
 test('admin course artwork accepts supported uploads and rejects unsupported formats', async () => {

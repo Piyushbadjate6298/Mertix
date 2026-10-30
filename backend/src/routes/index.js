@@ -7,7 +7,7 @@ import { schemas } from "../utils/validators.js";
 
 export function createApiRouter({ controller, service, env }) {
   const router = Router();
-  const { authenticate, authorize } = createAuthMiddleware({ env, service });
+  const { authenticate, optionalAuthenticate, authorize } = createAuthMiddleware({ env, service });
   const submissions = createSubmissionLimiter(env);
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024, files: 1 } });
 
@@ -24,10 +24,11 @@ export function createApiRouter({ controller, service, env }) {
     validateBody(schemas.login),
     controller.login,
   );
+  router.post('/auth/google', submissions, validateBody(schemas.googleCredential), controller.googleLogin);
   router.get("/auth/me", authenticate, controller.me);
-  router.get("/exams", controller.exams);
-  router.get("/exams/:id", controller.examById);
-  router.get('/courses', controller.publicCourses);
+  router.get("/exams", optionalAuthenticate, controller.exams);
+  router.get("/exams/:id", optionalAuthenticate, controller.examById);
+  router.get('/courses', optionalAuthenticate, controller.publicCourses);
   router.get('/landing-content', controller.landingContent);
   router.get('/payments/configuration', controller.paymentConfiguration);
   router.get("/questions", authenticate, controller.questions);
@@ -37,6 +38,20 @@ export function createApiRouter({ controller, service, env }) {
     authorize("student"),
     controller.dashboard,
   );
+  router.get('/me/wallet', authenticate, authorize('student'), controller.wallet);
+  router.get('/me/courses', authenticate, authorize('student'), controller.studentCourses);
+  router.get('/me/profile', authenticate, authorize('student'), controller.getStudentProfile);
+  router.put('/me/profile', authenticate, authorize('student'), validateBody(schemas.studentProfileUpdate), controller.updateStudentProfile);
+  router.post('/wallet/deposit/order', submissions, authenticate, authorize('student'), validateBody(schemas.walletDepositOrder), controller.createDepositOrder);
+  router.post('/me/wallet/deposit/order', submissions, authenticate, authorize('student'), validateBody(schemas.walletDepositOrder), controller.createDepositOrder);
+  router.post('/wallet/deposit/verify', submissions, authenticate, authorize('student'), validateBody(schemas.walletDepositVerify), controller.verifyDepositOrder);
+  router.post('/me/wallet/deposit/verify', submissions, authenticate, authorize('student'), validateBody(schemas.walletDepositVerify), controller.verifyDepositOrder);
+  router.post('/wallet/withdraw', submissions, authenticate, authorize('student'), validateBody(schemas.walletWithdrawalRequest), controller.requestWithdrawal);
+  router.post('/me/wallet/withdraw', submissions, authenticate, authorize('student'), validateBody(schemas.walletWithdrawalRequest), controller.requestWithdrawal);
+  router.get('/wallet/withdrawals', authenticate, authorize('student'), controller.studentWithdrawals);
+  router.get('/me/wallet/withdrawals', authenticate, authorize('student'), controller.studentWithdrawals);
+  router.post('/courses/:id/enroll', submissions, authenticate, authorize('student'), controller.enrollCourse);
+  router.post('/me/courses/enroll', submissions, authenticate, authorize('student'), controller.enrollCourse);
   router.post(
     "/exams/register",
     submissions,
@@ -88,6 +103,9 @@ export function createApiRouter({ controller, service, env }) {
   router.post('/teacher/question-banks/import', submissions, authenticate, authorize('teacher', 'admin', 'superadmin'), upload.single('file'), controller.importQuestionBank);
   router.put('/teacher/question-banks/:id', authenticate, authorize('teacher', 'admin', 'superadmin'), validateBody(schemas.questionBankUpdate), controller.updateQuestionBank);
   router.post('/teacher/question-banks/submit', submissions, authenticate, authorize('teacher', 'admin', 'superadmin'), validateBody(schemas.questionBankAction), controller.submitQuestionBank);
+  router.get('/teacher/dashboard', authenticate, authorize('teacher', 'admin', 'superadmin'), controller.teacherDashboard);
+  router.get('/teacher/profile', authenticate, authorize('teacher', 'admin', 'superadmin'), controller.getTeacherProfile);
+  router.put('/teacher/profile', authenticate, authorize('teacher', 'admin', 'superadmin'), validateBody(schemas.teacherProfileUpdate), controller.updateTeacherProfile);
   router.get('/exam-patterns', authenticate, authorize('teacher', 'admin', 'superadmin'), controller.patterns);
   router.get(
     "/admin/overview",
@@ -95,6 +113,13 @@ export function createApiRouter({ controller, service, env }) {
     authorize("admin", "superadmin"),
     controller.overview,
   );
+  router.get('/admin/finance/overview', authenticate, authorize('admin', 'superadmin'), controller.adminFinanceOverview);
+  router.get('/admin/wallets', authenticate, authorize('admin', 'superadmin'), controller.adminWallets);
+  router.get('/admin/wallets/:studentId', authenticate, authorize('admin', 'superadmin'), controller.adminStudentWalletDetails);
+  router.get('/admin/withdrawals', authenticate, authorize('admin', 'superadmin'), controller.adminWithdrawals);
+  router.post('/admin/withdrawals/:id/review', submissions, authenticate, authorize('admin', 'superadmin'), validateBody(schemas.adminWithdrawalAction), controller.reviewWithdrawal);
+  router.get('/admin/finance/reports', authenticate, authorize('admin', 'superadmin'), controller.adminFinancialReports);
+  router.get('/admin/finance/reports/export-csv', authenticate, authorize('admin', 'superadmin'), controller.exportFinancialCsv);
   router.post(
     "/admin/papers/approve",
     authenticate,
@@ -121,6 +146,10 @@ export function createApiRouter({ controller, service, env }) {
   );
   router.put('/admin/exams/:id', authenticate, authorize('admin', 'superadmin'), validateBody(schemas.examCatalog), controller.updateExamCatalog);
   router.delete('/admin/exams/:id', authenticate, authorize('admin', 'superadmin'), controller.deleteExamCatalog);
+  router.get('/admin/prize-distributions', authenticate, authorize('admin', 'superadmin'), controller.demoPrizeDistributions);
+  router.get('/admin/prize-rankings', authenticate, authorize('admin', 'superadmin'), controller.demoPrizeRankings);
+  router.post('/admin/prize-distributions', submissions, authenticate, authorize('admin', 'superadmin'), validateBody(schemas.demoPrizeDistribution), controller.createDemoPrizeDistribution);
+  router.post('/admin/prize-distributions/:id/approve', submissions, authenticate, authorize('superadmin'), controller.approveDemoPrizeDistribution);
   router.post(
     "/support",
     submissions,

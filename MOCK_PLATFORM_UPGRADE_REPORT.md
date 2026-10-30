@@ -1,4 +1,4 @@
-# LGW MeritX mock-platform upgrade report
+MeritX mock-platform upgrade report
 
 Date: 22 October 2026
 
@@ -17,12 +17,12 @@ Date: 22 October 2026
 
 ## Supplied workbook verification
 
-| Workbook | Rows | Answers mapped | Compatible result | Strict-standard result |
-|---|---:|---:|---|---|
-| JEE Advanced | 102 | 102 | Preserves all 102 with limitations | Blocked: five repeated texts plus missing genuine numerical, matching-list, linked-stem, and paper metadata |
-| JEE Main | 75 | 75 | Preserves all 75 | Blocked at publication: all 75 source rows are single-correct; five native numerical records per subject are absent |
-| MHT-CET PCM | 150 | 150 | Preserves all 150 | Pattern-compatible: 50 Physics, 50 Chemistry, 50 Mathematics; single-correct format |
-| NEET UG | 180 | 180 | Preserves all 180 | Pattern-compatible: 45 Physics, 45 Chemistry, 90 Biology; single-correct format |
+| Workbook     | Rows | Answers mapped | Compatible result                  | Strict-standard result                                                                                              |
+| ------------ | ---: | -------------: | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| JEE Advanced |  102 |            102 | Preserves all 102 with limitations | Blocked: five repeated texts plus missing genuine numerical, matching-list, linked-stem, and paper metadata         |
+| JEE Main     |   75 |             75 | Preserves all 75                   | Blocked at publication: all 75 source rows are single-correct; five native numerical records per subject are absent |
+| MHT-CET PCM  |  150 |            150 | Preserves all 150                  | Pattern-compatible: 50 Physics, 50 Chemistry, 50 Mathematics; single-correct format                                 |
+| NEET UG      |  180 |            180 | Preserves all 180                  | Pattern-compatible: 45 Physics, 45 Chemistry, 90 Biology; single-correct format                                     |
 
 The importer never relabels legacy option-based questions as native numerical or matching-list records. Compatible papers carry a visible practice label and use their actual question count and attainable maximum marks.
 
