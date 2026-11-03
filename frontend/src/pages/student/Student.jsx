@@ -29,6 +29,7 @@ import {
   Smartphone,
   Check,
   X,
+  Play,
 } from "lucide-react";
 import { Shell, Stat, Empty, Loading } from "../../components/Layouts";
 import { useAuth } from "../../context/AuthContext";
@@ -144,11 +145,31 @@ export function CourseCheckoutModal({ course, wallet, onClose, onEnrolled, onAdd
                 <strong style={{ color: "#10b981" }}>{money(success.wallet?.availableBalance ?? remaining)}</strong>
               </div>
             </div>
-            <div className="checkout-modal-actions" style={{ marginTop: 24 }}>
-              <Link to="/student/courses" className="btn btn-primary" onClick={onClose}>
-                Go to My Courses <ArrowUpRight size={16} />
-              </Link>
-            </div>
+            {(() => {
+              const targetExamId =
+                success.primaryExamId ||
+                course.primaryExamId ||
+                (course.slug?.includes("neet")
+                  ? "neet-01"
+                  : course.slug?.includes("advanced")
+                    ? "jee-advanced-01"
+                    : "jee-main-01");
+              return (
+                <div className="checkout-modal-actions" style={{ marginTop: 24, display: "flex", gap: 12 }}>
+                  <Link
+                    to={`/take/${targetExamId}`}
+                    className="btn btn-primary"
+                    onClick={onClose}
+                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                  >
+                    <Play size={15} fill="currentColor" /> Start Exam Now
+                  </Link>
+                  <Link to="/student/courses" className="btn btn-outline" onClick={onClose}>
+                    My Courses
+                  </Link>
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <>
@@ -270,7 +291,7 @@ export function StudentDashboard() {
     );
   }
 
-  const attempts = data.attempts?.filter((a) => a.status === "submitted") || [];
+  const attempts = data.attempts?.filter((a) => (a.status === "submitted" || a.status === "TERMINATED") && a.result) || [];
   const avg = attempts.length
     ? Math.round(attempts.reduce((s, a) => s + a.result.correct, 0) / attempts.length)
     : 0;
@@ -528,54 +549,88 @@ export function MyCourses() {
         <Loading />
       ) : courses.length ? (
         <div className="course-catalog-grid">
-          {courses.map((course) => (
-            <article className="course-catalog-card" key={course.enrollmentId || course.id}>
-              {course.imageUrl ? (
-                <div className="course-card-image">
-                  <img src={course.imageUrl} alt={course.name} />
-                </div>
-              ) : (
-                <div className="course-card-image placeholder">
-                  <BookOpen size={40} />
-                </div>
-              )}
-              <div className="course-card-body">
-                <div className="course-card-tags">
-                  <span className="course-tag-category">{course.category || "Preparation"}</span>
-                  <span className="tag green">Active Access</span>
-                </div>
-                <h3>{course.name || course.title}</h3>
-                <p className="course-desc">
-                  {course.shortDescription || course.fullDescription || "Comprehensive curriculum and mock tests."}
-                </p>
-                <div className="course-card-meta">
-                  <div>
-                    <User size={14} />
-                    <span>Instructor: <strong>{course.teacherName || "Meritx Faculty"}</strong></span>
+          {courses.map((course) => {
+            const targetExamId =
+              course.primaryExamId ||
+              course.linkedExams?.[0]?.id ||
+              (course.slug?.includes("neet")
+                ? "neet-01"
+                : course.slug?.includes("advanced")
+                  ? "jee-advanced-01"
+                  : "jee-main-01");
+            const tests = course.linkedExams || [];
+            const primaryTest = tests[0];
+
+            return (
+              <article className="course-catalog-card" key={course.enrollmentId || course.id}>
+                {course.imageUrl ? (
+                  <div className="course-card-image">
+                    <img src={course.imageUrl} alt={course.name} />
                   </div>
-                  <div>
-                    <Clock3 size={14} />
-                    <span>Duration: <strong>{course.durationDays || 180} Days</strong></span>
+                ) : (
+                  <div className="course-card-image placeholder">
+                    <BookOpen size={40} />
                   </div>
-                  <div>
-                    <CalendarDays size={14} />
-                    <span>Enrolled: <strong>{new Date(course.enrolledAt).toLocaleDateString("en-IN")}</strong></span>
+                )}
+                <div className="course-card-body">
+                  <div className="course-card-tags">
+                    <span className="course-tag-category">{course.category || "Preparation"}</span>
+                    <span className="tag green">Active Access</span>
+                  </div>
+                  <h3>{course.name || course.title}</h3>
+                  <p className="course-desc">
+                    {course.shortDescription || course.fullDescription || "Comprehensive curriculum and mock tests."}
+                  </p>
+                  <div className="course-card-meta">
+                    <div>
+                      <User size={14} />
+                      <span>Instructor: <strong>{course.teacherName || "Meritx Faculty"}</strong></span>
+                    </div>
+                    <div>
+                      <Clock3 size={14} />
+                      <span>Duration: <strong>{course.durationDays || 180} Days</strong></span>
+                    </div>
+                    <div>
+                      <CalendarDays size={14} />
+                      <span>Enrolled: <strong>{new Date(course.enrolledAt).toLocaleDateString("en-IN")}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Included Live Proctored Examination Box */}
+                  <div className="enrolled-exam-banner">
+                    <div className="exam-banner-info">
+                      <span className="exam-banner-kicker">
+                        <ShieldCheck size={13} color="#2563eb" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />
+                        OFFICIAL MOCK TEST INCLUDED
+                      </span>
+                      <h4>{primaryTest?.title || `${course.name || course.title} · Mock Test 01`}</h4>
+                      <div className="exam-banner-meta">
+                        <span><Clock3 size={12} /> {primaryTest?.duration || 180} Mins</span>
+                        <span><ClipboardList size={12} /> {primaryTest?.questions || 75} Questions</span>
+                        <span><Trophy size={12} /> {primaryTest?.marks || 300} Marks</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="course-card-footer">
+                    <div>
+                      <small className="muted">PAID VIA WALLET</small>
+                      <strong style={{ display: "block", color: "#10b981", fontSize: 16 }}>
+                        {money(course.feePaid || course.amountPaid || course.effectivePrice || 0)}
+                      </strong>
+                    </div>
+                    <Link
+                      to={`/take/${targetExamId}`}
+                      className="btn btn-primary small"
+                      style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, padding: "9px 18px" }}
+                    >
+                      <Play size={14} fill="currentColor" /> Start Exam Now
+                    </Link>
                   </div>
                 </div>
-                <div className="course-card-footer">
-                  <div>
-                    <small className="muted">PAID VIA WALLET</small>
-                    <strong style={{ display: "block", color: "#10b981", fontSize: 16 }}>
-                      {money(course.amountPaid || course.effectivePrice || 0)}
-                    </strong>
-                  </div>
-                  <Link to="/student/explore" className="btn btn-primary small">
-                    Start Learning <ArrowUpRight size={15} />
-                  </Link>
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="panel" style={{ textAlign: "center", padding: "60px 20px" }}>
@@ -627,11 +682,18 @@ export function BrowseCourses() {
     loadData();
   }, [token]);
 
-  const filtered = courses.filter((c) =>
-    `${c.name} ${c.category} ${c.examType} ${c.teacherName || ""}`
+  const [category, setCategory] = useState("all");
+
+  const filtered = courses.filter((c) => {
+    const matchesQuery = `${c.name} ${c.category} ${c.examType} ${c.teacherName || ""}`
       .toLowerCase()
-      .includes(query.toLowerCase())
-  );
+      .includes(query.toLowerCase());
+    const matchesCategory =
+      category === "all" ||
+      (c.category && c.category.toLowerCase().includes(category.toLowerCase())) ||
+      (c.examType && c.examType.toLowerCase().includes(category.toLowerCase()));
+    return matchesQuery && matchesCategory;
+  });
 
   return (
     <Shell
@@ -643,7 +705,7 @@ export function BrowseCourses() {
           <Wallet size={16} />
           <span>Wallet Balance: <strong>{money(wallet?.availableBalance ?? 0)}</strong></span>
           <Link to="/student/deposit" className="btn-mini-add">
-            + Add
+            + Add Money
           </Link>
         </div>
       }
@@ -657,10 +719,37 @@ export function BrowseCourses() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", padding: 2 }}
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
         <div className="demo-mode-badge">
           <ShieldCheck size={16} /> DEMO MODE: Simulated Purchases
         </div>
+      </div>
+
+      <div className="catalog-category-chips">
+        {[
+          { id: "all", label: "All Courses" },
+          { id: "engineering", label: "⚡ Engineering Entrance (JEE)" },
+          { id: "medical", label: "🩺 Medical Entrance (NEET)" },
+          { id: "state", label: "🎯 State Entrance (MHT-CET)" },
+        ].map((cat) => (
+          <button
+            key={cat.id}
+            type="button"
+            className={`catalog-chip ${category === cat.id ? "active" : ""}`}
+            onClick={() => setCategory(cat.id)}
+          >
+            {cat.label}
+          </button>
+        ))}
       </div>
 
       {error && <div className="alert error">{error}</div>}
@@ -1909,7 +1998,7 @@ export function Results() {
         <Loading />
       ) : (
         <div className="panel">
-          {data.attempts.filter((a) => a.status === "submitted").length ? (
+          {data.attempts.filter((a) => (a.status === "submitted" || a.status === "TERMINATED") && a.result).length ? (
             <div className="table-scroll">
               <table className="data-table">
                 <thead>
@@ -1921,13 +2010,13 @@ export function Results() {
                     <th>Incorrect</th>
                     <th>Unanswered</th>
                     <th>Accuracy</th>
-                    <th>Completed</th>
+                    <th>Status / Date</th>
                     <th>Review</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.attempts
-                    .filter((a) => a.status === "submitted")
+                    .filter((a) => (a.status === "submitted" || a.status === "TERMINATED") && a.result)
                     .map((a) => (
                       <tr key={a.id}>
                         <td>
@@ -1939,7 +2028,13 @@ export function Results() {
                         <td>{a.result.incorrect}</td>
                         <td>{a.result.unanswered ?? a.result.unattempted}</td>
                         <td>{a.result.accuracy}%</td>
-                        <td>{new Date(a.submittedAt).toLocaleDateString("en-IN")}</td>
+                        <td>
+                          {a.status === "TERMINATED" ? (
+                            <span style={{ color: "#dc2626", fontWeight: 800 }}>TERMINATED</span>
+                          ) : (
+                            new Date(a.submittedAt).toLocaleDateString("en-IN")
+                          )}
+                        </td>
                         <td>
                           <button
                             className="btn btn-soft small"

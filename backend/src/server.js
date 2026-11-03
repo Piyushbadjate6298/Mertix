@@ -18,7 +18,7 @@ try {
   const service = createPlatformService(database, { env, razorpay });
   const emailService = createEmailService(env.smtp);
   const app = createApp({ service, emailService, env });
-  const server = app.listen(env.port, env.host, () => console.log(`MERITX API listening on http://${env.host}:${env.port}`));
+  const server = app.listen(env.port, () => console.log(`MERITX API listening on port ${env.port} (IPv4/IPv6 dual-stack)`));
   const shutdown = (signal) => {
     console.log(`${signal} received; closing MERITX API`);
     server.close(async () => { await database.close(); process.exit(0); });

@@ -1,4 +1,35 @@
-const configuredBase = String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').trim().replace(/\/+$/, '').replace(/\/api$/, '');
+function getBaseCandidates() {
+  const envUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '').replace(/\/api$/, '');
+  const candidates = [];
+
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    const proto = window.location.protocol || 'http:';
+
+    // Support relative proxy route if served through Vite or reverse proxy
+    candidates.push('');
+
+    // If accessing via LAN IP or non-localhost host, prioritize host:5000 before localhost
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      candidates.push(`${proto}//${host}:5000`);
+    }
+  }
+
+  if (envUrl) candidates.push(envUrl);
+
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    const proto = window.location.protocol || 'http:';
+    candidates.push(`${proto}//${host}:5000`);
+    if (host !== '127.0.0.1') candidates.push(`${proto}//127.0.0.1:5000`);
+    if (host !== 'localhost') candidates.push(`${proto}//localhost:5000`);
+  } else {
+    candidates.push('http://localhost:5000');
+    candidates.push('http://127.0.0.1:5000');
+  }
+
+  return Array.from(new Set(candidates.filter((c) => typeof c === 'string')));
+}
 
 const inFlightGets = new Map();
 
@@ -15,21 +46,41 @@ export async function api(path, { method = 'GET', body, token } = {}) {
     const form = typeof FormData !== 'undefined' && body instanceof FormData;
     if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Bearer ${token}`;
+
+    const bases = getBaseCandidates();
     let response;
-    try {
-      response = await fetch(`${configuredBase}/api${path}`, {
-        method,
-        headers,
-        body: body === undefined ? undefined : form ? body : JSON.stringify(body),
-        // Allow up to 45s for free-tier backend cold starts (Render/Neon sleep mode)
-        signal: AbortSignal.timeout(form ? 90_000 : 45_000),
-      });
-    } catch (error) {
-      if (error.name === 'TimeoutError') throw new Error('The server took too long to respond. The cloud service may be waking up, please try again.');
-      throw new Error('Unable to reach the MERITX server. Check your connection and try again.');
-    } finally {
-      if (cacheKey) inFlightGets.delete(cacheKey);
+    let lastNetworkError = null;
+
+    for (const base of bases) {
+      try {
+        const url = base ? `${base}/api${path}` : `/api${path}`;
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: body === undefined ? undefined : form ? body : JSON.stringify(body),
+          // Allow up to 45s for free-tier backend cold starts (Render/Neon sleep mode)
+          signal: AbortSignal.timeout(form ? 90_000 : 45_000),
+        });
+        if (!base && (res.status === 404 || res.status >= 500)) {
+          continue;
+        }
+        response = res;
+        break;
+      } catch (err) {
+        lastNetworkError = err;
+        if (err.name === 'TimeoutError') break;
+      }
     }
+
+    if (!response) {
+      if (lastNetworkError?.name === 'TimeoutError') {
+        throw new Error('The server took too long to respond. The cloud service may be waking up, please try again.');
+      }
+      throw new Error('Unable to reach the MERITX server. Check your connection and try again.');
+    }
+
+    if (cacheKey) inFlightGets.delete(cacheKey);
+
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error?.message || payload.message || 'The request could not be completed.');
     return payload;

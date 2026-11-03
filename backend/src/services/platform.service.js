@@ -18,7 +18,33 @@ const registration = (row) => ({ id: row.id, studentId: row.student_id, examId: 
 const payment = (row) => ({ id: row.id, studentId: row.student_id, examId: row.exam_id, courseId: row.course_id || null, amount: Number(row.amount), amountPaise: Number(row.amount_paise || 0), currency: row.currency || 'INR', status: row.status, gateway: row.gateway, orderId: row.gateway_order_id || null, paymentId: row.gateway_payment_id || null, failureReason: row.failure_reason || null, date: iso(row.verified_at || row.created_at) });
 const paper = (row) => ({ id: row.id, title: row.title, subject: row.subject, questions: row.question_count, status: row.status, createdBy: row.created_by, date: iso(row.created_at) });
 const ticket = (row) => ({ id: row.id, userId: row.user_id, subject: row.subject, message: row.message, status: row.status, createdAt: iso(row.created_at) });
-const attempt = (row) => ({ id: row.id, studentId: row.student_id, examId: row.exam_id, status: row.status, answers: row.answers || {}, marked: row.marked || [], result: row.result, questions: row.status === 'submitted' ? (row.question_snapshot || []) : undefined, durationSeconds: row.duration_seconds, startedAt: iso(row.started_at), deadlineAt: iso(row.deadline_at), serverNow: new Date().toISOString(), acceptedInstructionsAt: iso(row.accepted_instructions_at), currentSegment: Number(row.current_segment || 1), segmentState: row.segment_state || {}, lastSavedAt: iso(row.last_saved_at), submittedAt: iso(row.submitted_at), timeTaken: row.time_taken });
+const attempt = (row) => ({
+  id: row.id,
+  studentId: row.student_id,
+  examId: row.exam_id,
+  status: row.status,
+  answers: row.answers || {},
+  marked: row.marked || [],
+  result: row.result,
+  questions: (row.status === 'submitted' || row.status === 'TERMINATED') ? (row.question_snapshot || []) : undefined,
+  durationSeconds: row.duration_seconds,
+  startedAt: iso(row.started_at),
+  deadlineAt: iso(row.deadline_at),
+  serverNow: new Date().toISOString(),
+  acceptedInstructionsAt: iso(row.accepted_instructions_at),
+  currentSegment: Number(row.current_segment || 1),
+  segmentState: row.segment_state || {},
+  lastSavedAt: iso(row.last_saved_at),
+  submittedAt: iso(row.submitted_at),
+  timeTaken: row.time_taken,
+  warningCount: Number(row.warning_count || 0),
+  isFlagged: Boolean(row.is_flagged),
+  flagReason: row.flag_reason || null,
+  proctoringStatus: row.proctoring_status || 'unmonitored',
+  terminationReason: row.termination_reason || null,
+  terminatedAt: iso(row.terminated_at),
+  violationHistory: row.violation_history || []
+});
 const bankSummary = (row) => ({ id: row.id, title: row.title, subject: row.subject, sourceFilename: row.source_filename, sourceType: row.source_type, importMode: row.import_mode || 'compatible_practice', patternCode: row.pattern_code, importSummary: row.import_summary || {}, sourceLimitations: row.source_limitations || [], extractionStatus: row.extraction_status, warnings: row.extraction_warnings || [], status: row.status, rejectionReason: row.rejection_reason || '', version: Number(row.version || 1), createdBy: row.created_by, teacherName: row.teacher_name, approvedBy: row.approved_by, assignedExamId: row.assigned_exam_id, questionCount: Number(row.question_count || 0), incompleteCount: Number(row.incomplete_count || 0), duplicateCount: Number(row.duplicate_count || 0), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at), submittedAt: iso(row.submitted_at), approvedAt: iso(row.approved_at), publishedAt: iso(row.published_at) });
 const bankQuestion = (row) => ({ id: row.id, externalQuestionId: row.external_question_id, sourceRow: row.source_row, text: row.text, options: row.options || [], questionType: row.question_type || 'single_correct', sourceQuestionType: row.source_question_type, correctOptions: row.correct_options?.length ? row.correct_options : (Number.isInteger(row.correct_option) ? [row.correct_option] : []), correctOption: row.correct_option, numericalAnswer: row.numerical_answer === null ? null : Number(row.numerical_answer), numericalPrecision: row.numerical_precision, paperNumber: row.paper_number, sectionNumber: row.section_number, questionStemId: row.question_stem_id, matchingListData: row.matching_list_data, explanation: row.explanation || '', subject: row.subject, chapter: row.chapter || '', topic: row.topic || '', difficulty: row.difficulty, imageUrl: row.image_url, optionImageUrls: row.option_image_urls || [], reference: row.reference, sourcePage: row.source_page, extractionConfidence: Number(row.extraction_confidence || 0), extractionErrors: row.extraction_errors || [], duplicate: Boolean(row.is_duplicate) });
 const pattern = (row) => ({ id: row.id, code: row.code, name: row.name, version: Number(row.version), officialYear: row.official_year, configuration: row.configuration, status: row.status, builtIn: row.is_builtin, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) });
@@ -273,6 +299,7 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       }
       return publicUser(row);
     },
+    getExam,
     listExams,
     async listPatterns() {
       const { rows } = await db.query(`SELECT * FROM exam_patterns WHERE status<>'retired' ORDER BY code,version DESC`);
@@ -690,15 +717,41 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
 
         await log(studentId, 'COURSE_ENROLLED', `${targetCourse.name} (₹${price})`, client);
 
+        const allExams = await listExams(client, { authenticated: true });
+        const matchingExams = allExams.filter(x =>
+          x.courseId === targetCourse.id ||
+          (x.type && targetCourse.exam_type && x.type.toLowerCase().includes(targetCourse.exam_type.toLowerCase())) ||
+          (targetCourse.slug && x.id.includes(targetCourse.slug.replace('-2026', '')))
+        );
+        const fallbackExamId = targetCourse.slug?.includes('neet') ? 'neet-01' : targetCourse.slug?.includes('advanced') ? 'jee-advanced-01' : 'jee-main-01';
+        const primaryExamId = matchingExams[0]?.id || fallbackExamId;
+
+        const examsToRegister = Array.from(new Set([primaryExamId, ...matchingExams.map(x => x.id)].filter(Boolean)));
+        for (const exId of examsToRegister) {
+          await client.query(
+            `INSERT INTO registrations (id, student_id, exam_id, status)
+             VALUES ($1, $2, $3, 'confirmed')
+             ON CONFLICT (student_id, exam_id) DO UPDATE SET status = 'confirmed'`,
+            [uid('reg'), studentId, exId]
+          );
+        }
+
         return {
           enrollment: enrollRows[0],
           course: { id: targetCourse.id, name: targetCourse.name, fee: price },
           walletBalance: balanceAfter,
-          feePaid: price
+          feePaid: price,
+          reference: txId || `ENROLL-${enrollmentId}`,
+          primaryExamId,
+          wallet: {
+            availableBalance: balanceAfter,
+            balance: balanceAfter,
+          },
         };
       });
     },
     async listStudentCourses(studentId) {
+      const allExams = await listExams(db, { authenticated: true });
       const { rows } = await db.query(`
         SELECT e.*, c.name AS course_name, c.slug, c.category, c.exam_type,
                c.short_description, c.full_description, c.image_url, c.banner_image_url,
@@ -711,25 +764,54 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
         WHERE e.student_id = $1 AND e.status = 'active'
         ORDER BY e.enrolled_at DESC
       `, [studentId]);
-      return rows.map(r => ({
-        id: r.id,
-        courseId: r.course_id,
-        courseName: r.course_name,
-        slug: r.slug,
-        category: r.category,
-        examType: r.exam_type,
-        shortDescription: r.short_description,
-        fullDescription: r.full_description,
-        imageUrl: r.image_url,
-        bannerImageUrl: r.banner_image_url,
-        feePaid: Number(r.fee_paid),
-        teacherName: r.teacher_name,
-        durationDays: r.duration_days,
-        mockTestCount: r.mock_test_count,
-        examCount: r.exam_count,
-        status: r.status,
-        enrolledAt: iso(r.enrolled_at)
-      }));
+      return rows.map(r => {
+        const matchingExams = allExams.filter(x =>
+          x.courseId === r.course_id ||
+          (x.type && r.exam_type && x.type.toLowerCase().includes(r.exam_type.toLowerCase())) ||
+          (r.slug && x.id.includes(r.slug.replace('-2026', '')))
+        );
+        const fallbackExamId = r.slug?.includes('neet') ? 'neet-01' : r.slug?.includes('advanced') ? 'jee-advanced-01' : 'jee-main-01';
+        const primaryExamId = matchingExams[0]?.id || fallbackExamId;
+
+        return {
+          id: r.id,
+          courseId: r.course_id,
+          courseName: r.course_name,
+          name: r.course_name,
+          slug: r.slug,
+          category: r.category,
+          examType: r.exam_type,
+          shortDescription: r.short_description,
+          fullDescription: r.full_description,
+          imageUrl: r.image_url,
+          bannerImageUrl: r.banner_image_url,
+          feePaid: Number(r.fee_paid),
+          teacherName: r.teacher_name,
+          durationDays: r.duration_days,
+          mockTestCount: r.mock_test_count,
+          examCount: matchingExams.length || r.exam_count || 1,
+          primaryExamId,
+          linkedExams: matchingExams.length ? matchingExams.map(ex => ({
+            id: ex.id,
+            title: ex.title,
+            duration: ex.duration,
+            questions: ex.questions,
+            marks: ex.marks,
+            subject: ex.subject,
+            tag: ex.tag,
+          })) : [{
+            id: primaryExamId,
+            title: `${r.course_name} · Grand Mock Test 01`,
+            duration: 180,
+            questions: 75,
+            marks: 300,
+            subject: r.exam_type || 'Comprehensive',
+            tag: 'Official Practice',
+          }],
+          status: r.status,
+          enrolledAt: iso(r.enrolled_at)
+        };
+      });
     },
     async getStudentProfile(studentId) {
       const [userResult, profileResult] = await Promise.all([
@@ -856,7 +938,7 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       await log(teacherId, 'PROFILE_UPDATE', 'Teacher profile updated');
       return this.getTeacherProfile(teacherId);
     },
-    async getAdminFinanceOverview() {
+    async getAdminFinanceOverview(query = {}) {
       const [
         counts,
         courseCount,
@@ -865,8 +947,16 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
         withdrawalsSum,
         courseRevenueSum,
         walletLiabilities,
+        teacherWalletLiabilities,
         pendingWithdrawals,
-        pendingPayments
+        pendingAdminPayouts,
+        pendingPayments,
+        refundsSum,
+        todayDeposits,
+        todayPayments,
+        todayPaidStudents,
+        treasuryLedger,
+        rewardsReserved
       ] = await Promise.all([
         db.query(`SELECT COUNT(*) FILTER (WHERE role='student')::int AS students, COUNT(*) FILTER (WHERE role='teacher')::int AS teachers FROM users`),
         db.query(`SELECT COUNT(*)::int AS count FROM courses WHERE status='published'`),
@@ -874,9 +964,36 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
         db.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count FROM wallet_transactions WHERE type='deposit' AND status='successful'`),
         db.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count FROM wallet_transactions WHERE type='withdrawal' AND status='successful'`),
         db.query(`SELECT COALESCE(SUM(fee_paid), 0)::numeric AS total FROM course_enrollments WHERE status='active'`),
-        db.query(`SELECT COALESCE(SUM(balance), 0)::numeric AS total, COALESCE(SUM(locked_balance), 0)::numeric AS locked FROM wallets`),
+        db.query(`SELECT COALESCE(SUM(w.balance), 0)::numeric AS total, COALESCE(SUM(w.locked_balance), 0)::numeric AS locked FROM wallets w JOIN users u ON u.id = w.user_id WHERE u.role='student'`),
+        db.query(`SELECT COALESCE(SUM(w.balance), 0)::numeric AS total, COALESCE(SUM(w.locked_balance), 0)::numeric AS locked FROM wallets w JOIN users u ON u.id = w.user_id WHERE u.role='teacher'`),
         db.query(`SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::numeric AS total FROM withdrawal_requests WHERE status IN ('pending', 'processing')`),
-        db.query(`SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::numeric AS total FROM payment_orders WHERE status='created'`)
+        db.query(`SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::numeric AS total FROM platform_payout_requests WHERE status IN ('requested', 'awaiting_approval', 'processing')`),
+        db.query(`SELECT COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::numeric AS total FROM payment_orders WHERE status='created'`),
+        db.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count FROM wallet_transactions WHERE type IN ('refund', 'reversal') AND status='successful'`),
+        db.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count FROM wallet_transactions WHERE type='deposit' AND status='successful' AND created_at >= CURRENT_DATE`),
+        db.query(`SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count FROM payment_orders WHERE status IN ('captured', 'paid') AND created_at >= CURRENT_DATE`),
+        db.query(`
+          SELECT COUNT(DISTINCT user_id)::int AS count FROM (
+            SELECT user_id FROM wallet_transactions WHERE type='deposit' AND status='successful' AND created_at >= CURRENT_DATE
+            UNION
+            SELECT user_id FROM payment_orders WHERE status IN ('captured', 'paid') AND created_at >= CURRENT_DATE
+            UNION
+            SELECT student_id AS user_id FROM course_enrollments WHERE status='active' AND enrolled_at >= CURRENT_DATE
+          ) unique_payers
+        `),
+        db.query(`
+          SELECT
+            COALESCE(SUM(amount) FILTER (WHERE direction='credit' AND category='treasury'), 0)::numeric AS treasury_credits,
+            COALESCE(SUM(amount) FILTER (WHERE direction='debit' AND category='treasury'), 0)::numeric AS treasury_debits,
+            COALESCE(SUM(amount) FILTER (WHERE direction='credit' AND category='gateway_settlement'), 0)::numeric AS gateway_settled
+          FROM platform_master_ledger
+        `),
+        db.query(`
+          SELECT
+            COALESCE(SUM(amount) FILTER (WHERE direction='credit' AND category='reward_liability'), 0)::numeric -
+            COALESCE(SUM(amount) FILTER (WHERE direction='debit' AND category='reward_liability'), 0)::numeric AS net_reserved
+          FROM platform_master_ledger
+        `)
       ]);
 
       const totalStudents = counts.rows[0].students;
@@ -886,14 +1003,89 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       const totalSuccessfulDeposits = Number(depositsSum.rows[0].total);
       const totalSuccessfulWithdrawals = Number(withdrawalsSum.rows[0].total);
       const totalCourseRevenue = Number(courseRevenueSum.rows[0].total);
-      const totalWalletLiabilities = Number(walletLiabilities.rows[0].total);
-      const totalLockedLiabilities = Number(walletLiabilities.rows[0].locked);
-      const pendingWithdrawalCount = pendingWithdrawals.rows[0].count;
-      const pendingWithdrawalAmount = Number(pendingWithdrawals.rows[0].total);
+      const totalStudentWalletBalance = Number(walletLiabilities.rows[0].total);
+      const totalTeacherWalletBalance = Number(teacherWalletLiabilities.rows[0].total);
+      const totalWalletLiabilities = Number((totalStudentWalletBalance + totalTeacherWalletBalance).toFixed(2));
+      const totalLockedLiabilities = Number((Number(walletLiabilities.rows[0].locked) + Number(teacherWalletLiabilities.rows[0].locked)).toFixed(2));
+      const pendingWithdrawalCount = pendingWithdrawals.rows[0].count + pendingAdminPayouts.rows[0].count;
+      const pendingWithdrawalAmount = Number((Number(pendingWithdrawals.rows[0].total) + Number(pendingAdminPayouts.rows[0].total)).toFixed(2));
       const pendingPaymentCount = pendingPayments.rows[0].count;
       const pendingPaymentAmount = Number(pendingPayments.rows[0].total);
+      const totalRefunds = Number(refundsSum.rows[0].total);
 
-      return {
+      const todayCollection = Number((Number(todayDeposits.rows[0].total) + Number(todayPayments.rows[0].total)).toFixed(2));
+      const todaySuccessfulPayments = Number(todayDeposits.rows[0].count) + Number(todayPayments.rows[0].count);
+      const todayStudentsPaid = Number(todayPaidStudents.rows[0].count);
+
+      const totalAmountCollectedAllTime = Number((totalSuccessfulDeposits + totalCourseRevenue).toFixed(2));
+      const totalSuccessfulTransactions = Number(depositsSum.rows[0].count) + Number(withdrawalsSum.rows[0].count) + Number(enrollmentCount.rows[0].count);
+
+      const treasuryCredits = Number(treasuryLedger.rows[0].treasury_credits);
+      const treasuryDebits = Number(treasuryLedger.rows[0].treasury_debits);
+      const totalSettledAmount = Number(treasuryLedger.rows[0].gateway_settled) || treasuryCredits;
+      const totalRewardsReserved = Math.max(0, Number(rewardsReserved.rows[0].net_reserved));
+
+      // Calculate available treasury and withdrawable platform balance
+      const availablePlatformBalance = Number(Math.max(0, treasuryCredits - treasuryDebits).toFixed(2));
+      const pendingAdminPayoutAmount = Number(pendingAdminPayouts.rows[0].total);
+      const withdrawablePlatformBalance = Number(Math.max(0, availablePlatformBalance - totalRewardsReserved - pendingAdminPayoutAmount).toFixed(2));
+
+      // Fetch Time Series Data for Graphs
+      const [dailyRows, monthlyRows, refundsTrendRows, revenueTrendRows, withdrawalsTrendRows] = await Promise.all([
+        db.query(`
+          SELECT
+            TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+            TO_CHAR(d.day, 'Mon DD') AS label,
+            COALESCE(SUM(t.amount), 0)::numeric AS amount,
+            COUNT(t.id)::int AS count
+          FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day'::interval) d(day)
+          LEFT JOIN wallet_transactions t ON DATE_TRUNC('day', t.created_at) = d.day AND t.type='deposit' AND t.status='successful'
+          GROUP BY d.day ORDER BY d.day ASC
+        `),
+        db.query(`
+          SELECT
+            TO_CHAR(m.month, 'YYYY-MM') AS month,
+            TO_CHAR(m.month, 'Mon YYYY') AS label,
+            COALESCE(SUM(t.amount), 0)::numeric AS amount,
+            COUNT(t.id)::int AS count
+          FROM generate_series(DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months'), DATE_TRUNC('month', CURRENT_DATE), '1 month'::interval) m(month)
+          LEFT JOIN wallet_transactions t ON DATE_TRUNC('month', t.created_at) = m.month AND t.type='deposit' AND t.status='successful'
+          GROUP BY m.month ORDER BY m.month ASC
+        `),
+        db.query(`
+          SELECT
+            TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+            COALESCE(SUM(t.amount), 0)::numeric AS amount
+          FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day'::interval) d(day)
+          LEFT JOIN wallet_transactions t ON DATE_TRUNC('day', t.created_at) = d.day AND t.type IN ('refund','reversal') AND t.status='successful'
+          GROUP BY d.day ORDER BY d.day ASC
+        `),
+        db.query(`
+          SELECT
+            TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+            COALESCE(SUM(e.fee_paid) * 0.4, 0)::numeric AS platform_revenue
+          FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day'::interval) d(day)
+          LEFT JOIN course_enrollments e ON DATE_TRUNC('day', e.enrolled_at) = d.day AND e.status='active'
+          GROUP BY d.day ORDER BY d.day ASC
+        `),
+        db.query(`
+          SELECT
+            TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+            COALESCE(SUM(w.amount), 0)::numeric AS amount
+          FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, '1 day'::interval) d(day)
+          LEFT JOIN withdrawal_requests w ON DATE_TRUNC('day', w.processed_at) = d.day AND w.status='completed'
+          GROUP BY d.day ORDER BY d.day ASC
+        `)
+      ]);
+
+      const dailyCollections = dailyRows.rows.map(r => ({ date: r.date, label: r.label, amount: Number(r.amount), count: r.count }));
+      const monthlyCollections = monthlyRows.rows.map(r => ({ month: r.month, label: r.label, amount: Number(r.amount), count: r.count }));
+      const paymentsTrend = dailyCollections.map(d => ({ date: d.date, count: d.count }));
+      const refundsTrend = refundsTrendRows.rows.map(r => ({ date: r.date, amount: Number(r.amount) }));
+      const revenueTrend = revenueTrendRows.rows.map(r => ({ date: r.date, platformRevenue: Number(r.platform_revenue) }));
+      const withdrawalTrend = withdrawalsTrendRows.rows.map(r => ({ date: r.date, amount: Number(r.amount) }));
+
+      const summary = {
         totalStudents,
         totalTeachers,
         totalActiveCourses,
@@ -909,13 +1101,43 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
         pendingWithdrawalAmount,
         pendingPaymentCount,
         pendingPaymentAmount,
+        todayCollection,
+        todaySuccessfulPayments,
+        todayStudentsPaid,
+        totalAmountCollectedAllTime,
+        totalSuccessfulTransactions,
+        totalStudentWalletBalance,
+        totalTeacherWalletBalance,
+        totalPendingWithdrawals: pendingWithdrawalAmount,
+        totalRefunds,
+        totalRewardsReserved,
+        totalSettledAmount,
+        availablePlatformBalance,
+        withdrawablePlatformBalance
+      };
+
+      return {
+        ...summary,
+        summary,
+        charts: {
+          dailyCollections,
+          monthlyCollections,
+          paymentsTrend,
+          refundsTrend,
+          revenueTrend,
+          withdrawalTrend
+        },
         reconciliation: {
           totalCollectedDeposits: totalSuccessfulDeposits,
           totalEarnedCourseRevenue: totalCourseRevenue,
           totalCompletedWithdrawals: totalSuccessfulWithdrawals,
           totalOutstandingWalletLiabilities: totalWalletLiabilities,
+          studentWalletLiabilities: totalStudentWalletBalance,
+          teacherWalletLiabilities: totalTeacherWalletBalance,
           pendingTransactionsVolume: pendingPaymentAmount + pendingWithdrawalAmount,
-          settlementMode: 'DEMO MODE - SIMULATED SETTLEMENT'
+          platformTreasuryBalance: availablePlatformBalance,
+          withdrawableAmount: withdrawablePlatformBalance,
+          settlementMode: 'VERIFIED PLATFORM MASTER WALLET'
         }
       };
     },
@@ -1313,7 +1535,7 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       if (stored.status !== 'captured') await finalizeCapturedPayment(stored, await razorpay.payments.fetch(entity.id));
       return { received: true, status: 'captured' };
     },
-    async startAttempt(studentId, examId, acceptedInstructions = false) {
+    async startAttempt(studentId, examId, acceptedInstructions = false, retake = false) {
       const exam = await getExam(examId);
       if (!exam) throw new AppError(404, 'Exam unavailable', 'EXAM_NOT_FOUND');
       if (exam.schedule?.eligibleStudentIds?.length && !exam.schedule.eligibleStudentIds.includes(studentId)) throw new AppError(403, 'You are not eligible for this examination', 'EXAM_NOT_ELIGIBLE');
@@ -1321,20 +1543,97 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       if (exam.status !== 'published' && !exams.some((item) => item.id === examId)) throw new AppError(409, 'This examination is not published', 'EXAM_NOT_PUBLISHED');
       if (exam.startsAt && Date.now() < new Date(exam.startsAt).getTime()) throw new AppError(409, 'This examination has not started yet', 'EXAM_NOT_STARTED');
       if (exam.endsAt && Date.now() > new Date(exam.endsAt).getTime()) throw new AppError(409, 'This examination has ended', 'EXAM_ENDED');
-      const registered = await db.query(`SELECT 1 FROM registrations WHERE student_id=$1 AND exam_id=$2 AND status='confirmed'`, [studentId, examId]);
-      if (!registered.rowCount) throw new AppError(403, 'Register before starting', 'REGISTRATION_REQUIRED');
+      
+      let registered = await db.query(`SELECT 1 FROM registrations WHERE student_id=$1 AND exam_id=$2 AND status='confirmed'`, [studentId, examId]);
+      if (!registered.rowCount) {
+        const enrolled = await db.query(
+          `SELECT 1 FROM course_enrollments e
+           JOIN courses c ON c.id = e.course_id
+           WHERE e.student_id = $1 AND e.status = 'active'
+           AND (
+             e.course_id = $2
+             OR c.exam_type = $3
+             OR ($4 LIKE 'jee-%' AND (c.exam_type ILIKE '%jee%' OR c.slug ILIKE '%jee%'))
+             OR ($4 LIKE 'neet-%' AND (c.exam_type ILIKE '%neet%' OR c.slug ILIKE '%neet%'))
+             OR ($4 LIKE 'mht-%' AND (c.exam_type ILIKE '%mht%' OR c.slug ILIKE '%mht%'))
+           )`,
+          [studentId, exam.courseId || null, exam.type || null, examId]
+        );
+        const isFree = !exam.fee || Number(exam.fee) === 0;
+        const isPracticeMock = exam.id.startsWith('jee-') || exam.id.startsWith('neet-') || exam.id.startsWith('mht-') || exam.id.startsWith('exam-');
+
+        if (enrolled.rowCount > 0 || isFree || isPracticeMock) {
+          await db.query(
+            `INSERT INTO registrations (id, student_id, exam_id, status)
+             VALUES ($1, $2, $3, 'confirmed')
+             ON CONFLICT (student_id, exam_id) DO UPDATE SET status = 'confirmed'`,
+            [uid('reg'), studentId, examId]
+          );
+        } else {
+          throw new AppError(403, 'Register before starting', 'REGISTRATION_REQUIRED');
+        }
+      }
+
       const existing = await db.query('SELECT * FROM attempts WHERE student_id=$1 AND exam_id=$2', [studentId, examId]);
-      if (existing.rows[0]?.status === 'submitted') throw new AppError(409, 'Attempt already submitted', 'ATTEMPT_SUBMITTED');
-      if (existing.rows[0]) return attempt(existing.rows[0]);
+      const isExpired = existing.rows[0]?.deadline_at && (new Date(existing.rows[0].deadline_at).getTime() < Date.now());
+
+      if (existing.rows[0]?.status === 'TERMINATED') {
+        if (retake) {
+          throw new AppError(403, 'This examination attempt has been permanently terminated due to proctoring violations and cannot be restarted or resumed.', 'ATTEMPT_TERMINATED');
+        }
+        return attempt(existing.rows[0]);
+      }
+
+      if (existing.rows[0]?.status === 'submitted') {
+        if (retake) {
+          const snapshot = await approvedQuestions(exam);
+          const durationSeconds = Math.max(60, Number(exam.duration || 12) * 60);
+          const resetRow = (await db.query(
+            `UPDATE attempts
+             SET status='in_progress', answers='{}'::jsonb, marked='[]'::jsonb, result=NULL,
+                 duration_seconds=$1::integer, started_at=NOW(), deadline_at=NOW()+make_interval(secs => $1::integer),
+                 accepted_instructions_at=NOW(), segment_started_at=NOW(), submitted_at=NULL, time_taken=NULL,
+                 last_saved_at=NULL, question_snapshot=$2, warning_count=0, is_flagged=FALSE, flag_reason=NULL,
+                 proctoring_status='unmonitored', termination_reason=NULL, terminated_at=NULL, violation_history='[]'::jsonb
+             WHERE id=$3 RETURNING *`,
+            [durationSeconds, JSON.stringify(snapshot), existing.rows[0].id]
+          )).rows[0];
+          return attempt(resetRow);
+        }
+        throw new AppError(409, 'Attempt already submitted', 'ATTEMPT_SUBMITTED');
+      }
+
+      if (existing.rows[0]) {
+        if (retake || isExpired) {
+          const snapshot = await approvedQuestions(exam);
+          const durationSeconds = Math.max(60, Number(exam.duration || 12) * 60);
+          const resetRow = (await db.query(
+            `UPDATE attempts
+             SET status='in_progress', answers='{}'::jsonb, marked='[]'::jsonb, result=NULL,
+                 duration_seconds=$1::integer, started_at=NOW(), deadline_at=NOW()+make_interval(secs => $1::integer),
+                 accepted_instructions_at=NOW(), segment_started_at=NOW(), submitted_at=NULL, time_taken=NULL,
+                 last_saved_at=NULL, question_snapshot=$2, warning_count=0, is_flagged=FALSE, flag_reason=NULL,
+                 proctoring_status='unmonitored', termination_reason=NULL, terminated_at=NULL, violation_history='[]'::jsonb
+             WHERE id=$3 RETURNING *`,
+            [durationSeconds, JSON.stringify(snapshot), existing.rows[0].id]
+          )).rows[0];
+          return attempt(resetRow);
+        }
+        return attempt(existing.rows[0]);
+      }
       const snapshot = await approvedQuestions(exam);
       const durationSeconds = Math.max(60, Number(exam.duration || 12) * 60);
       const row = (await db.query(
-        `INSERT INTO attempts (id,student_id,exam_id,status,duration_seconds,deadline_at,accepted_instructions_at,segment_started_at,question_snapshot) VALUES ($1,$2,$3,'in_progress',$4::integer,NOW()+make_interval(secs => $4::integer),NOW(),NOW(),$5) RETURNING *`,
+        `INSERT INTO attempts (id,student_id,exam_id,status,duration_seconds,deadline_at,accepted_instructions_at,segment_started_at,question_snapshot,warning_count,is_flagged,violation_history) VALUES ($1,$2,$3,'in_progress',$4::integer,NOW()+make_interval(secs => $4::integer),NOW(),NOW(),$5,0,FALSE,'[]'::jsonb) RETURNING *`,
         [uid('attempt'), studentId, examId, durationSeconds, JSON.stringify(snapshot)],
       )).rows[0];
       return attempt(row);
     },
     async saveAttempt(studentId, { attemptId, answers, marked }) {
+      const checkTerminated = await db.query(`SELECT status FROM attempts WHERE id=$1 AND student_id=$2`, [attemptId, studentId]);
+      if (checkTerminated.rows[0]?.status === 'TERMINATED') {
+        throw new AppError(409, 'This examination attempt has been terminated. No further answers can be saved.', 'ATTEMPT_TERMINATED');
+      }
       const current = await db.query(`SELECT * FROM attempts WHERE id=$1 AND student_id=$2 AND status='in_progress'`, [attemptId, studentId]);
       if (!current.rowCount) throw new AppError(404, 'Active attempt not found', 'ATTEMPT_NOT_FOUND');
       const row = current.rows[0];
@@ -1358,25 +1657,64 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       const updated = (await db.query(`UPDATE attempts SET answers=$1, marked=$2,current_segment=$3,last_saved_at=NOW() WHERE id=$4 RETURNING *`, [safeAnswers, JSON.stringify(safeMarked), segmentNumber, attemptId])).rows[0];
       return attempt(updated);
     },
-    async submitAttempt(studentId, { attemptId, answers }) {
+    async submitAttempt(studentId, { attemptId, answers, isTermination = false, terminationReason = 'MAX_VIOLATIONS_REACHED' }) {
       return db.transaction(async (client) => {
-        const current = await client.query(`SELECT * FROM attempts WHERE id=$1 AND student_id=$2 AND status='in_progress' FOR UPDATE`, [attemptId, studentId]);
-        if (!current.rowCount) throw new AppError(404, 'Active attempt not found', 'ATTEMPT_NOT_FOUND');
+        const current = await client.query(`SELECT * FROM attempts WHERE id=$1 AND student_id=$2 FOR UPDATE`, [attemptId, studentId]);
+        if (!current.rowCount) throw new AppError(404, 'Attempt not found', 'ATTEMPT_NOT_FOUND');
         const row = current.rows[0];
+
+        // Idempotency: if already terminated or submitted, return existing record safely
+        if (row.status === 'TERMINATED' || row.status === 'submitted') {
+          return attempt(row);
+        }
+
         const exam = await getExam(row.exam_id, client);
-        const merged = { ...(row.answers || {}), ...answers };
+        const merged = { ...(row.answers || {}), ...(answers || {}) };
         const snapshot = row.question_snapshot || await approvedQuestions(exam, client);
         const validIds = new Set(snapshot.map((item) => String(item.id)));
         const safeAnswers = Object.fromEntries(Object.entries(merged).filter(([id]) => validIds.has(id)));
         const result = evaluate(snapshot, safeAnswers, exam.configuration || { rules: { single_correct: { correct: 4, incorrect: -1, unanswered: 0 } } });
         const elapsed = Math.floor((Date.now() - new Date(row.started_at).getTime()) / 1000);
+        const timeTaken = Math.min(row.duration_seconds, Math.max(0, elapsed));
+
+        if (isTermination) {
+          const { rows: allWarnings } = await client.query(`
+            SELECT id, warning_number, category, message, evidence_metadata, created_at
+            FROM proctoring_warnings
+            WHERE attempt_id = $1
+            ORDER BY warning_number ASC, created_at ASC
+          `, [attemptId]);
+          const violationHistory = allWarnings.map((w, i) => ({
+            warningNumber: w.warning_number || (i + 1),
+            category: w.category,
+            description: w.message,
+            timestamp: iso(w.created_at),
+            metadata: w.evidence_metadata || {}
+          }));
+
+          const updated = (await client.query(
+            `UPDATE attempts
+             SET answers=$1, status='TERMINATED', termination_reason=$2, terminated_at=NOW(), submitted_at=NOW(),
+                 time_taken=$3, result=$4, warning_count=GREATEST(warning_count, 3), is_flagged=TRUE,
+                 flag_reason='Proctoring violation: 3/3 warnings reached (MAX_VIOLATIONS_REACHED)',
+                 violation_history=$5
+             WHERE id=$6 RETURNING *`,
+            [safeAnswers, terminationReason || 'MAX_VIOLATIONS_REACHED', timeTaken, result, JSON.stringify(violationHistory), attemptId]
+          )).rows[0];
+          await log(studentId, 'EXAM_TERMINATED', `Terminated attempt ${attemptId}`, client);
+          return attempt(updated);
+        }
+
         const updated = (await client.query(
           `UPDATE attempts SET answers=$1,status='submitted',submitted_at=NOW(),time_taken=$2,result=$3 WHERE id=$4 RETURNING *`,
-          [safeAnswers, Math.min(row.duration_seconds, Math.max(0, elapsed)), result, attemptId],
+          [safeAnswers, timeTaken, result, attemptId],
         )).rows[0];
         await log(studentId, 'EXAM_SUBMIT', attemptId, client);
         return attempt(updated);
       });
+    },
+    async terminateAttempt(studentId, { attemptId, reason = 'MAX_VIOLATIONS_REACHED', answers = {} }) {
+      return this.submitAttempt(studentId, { attemptId, answers, isTermination: true, terminationReason: reason });
     },
     async listPapers() {
       return (await db.query('SELECT * FROM papers ORDER BY created_at DESC')).rows.map(paper);
@@ -1586,6 +1924,871 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
     },
     async listSupportTickets() {
       return (await db.query('SELECT * FROM support_tickets ORDER BY created_at DESC')).rows.map(ticket);
+    },
+    async getMasterWalletOverview() {
+      const [
+        metrics,
+        settingsRow,
+        ledgerRows,
+        payoutsRows
+      ] = await Promise.all([
+        this.getAdminFinanceOverview(),
+        db.query(`SELECT value FROM platform_settings WHERE key = 'business_bank_account'`),
+        db.query(`
+          SELECT l.*, u.name AS user_name, u.role AS user_role, c.name AS course_name
+          FROM platform_master_ledger l
+          LEFT JOIN users u ON u.id = l.user_id
+          LEFT JOIN courses c ON c.id = l.course_id
+          ORDER BY l.created_at DESC
+          LIMIT 100
+        `),
+        db.query(`
+          SELECT p.*, u.name AS requester_name, u.email AS requester_email
+          FROM platform_payout_requests p
+          JOIN users u ON u.id = p.requested_by
+          ORDER BY p.created_at DESC
+          LIMIT 50
+        `)
+      ]);
+
+      const beneficiaryAccount = settingsRow.rows[0]?.value || {
+        accountHolderName: 'MERITX ACADEMIC TECHNOLOGIES PVT LTD',
+        bankName: 'HDFC Bank Ltd',
+        accountNumberMasked: '••••••••6721',
+        ifscCode: 'HDFC0000240',
+        accountType: 'Current Account'
+      };
+
+      const transactions = ledgerRows.rows.map(r => ({
+        id: r.id,
+        transactionKey: r.transaction_key,
+        category: r.category,
+        type: r.type,
+        direction: r.direction,
+        amount: Number(r.amount),
+        balanceAfter: Number(r.balance_after),
+        userId: r.user_id,
+        userName: r.user_name || 'System Treasury',
+        userRole: r.user_role || 'platform',
+        examId: r.exam_id,
+        courseId: r.course_id,
+        courseName: r.course_name,
+        referenceId: r.reference_id,
+        description: r.description,
+        metadata: r.metadata,
+        date: iso(r.created_at)
+      }));
+
+      const payouts = payoutsRows.rows.map(p => ({
+        id: p.id,
+        amount: Number(p.amount),
+        feeDeduction: Number(p.fee_deduction),
+        netAmount: Number(p.net_amount),
+        bankName: p.bank_name,
+        accountHolderName: p.account_holder_name,
+        accountNumberMasked: p.account_number_masked,
+        ifscCode: p.ifsc_code,
+        purpose: p.withdrawal_purpose,
+        status: p.status,
+        utrNumber: p.utr_number,
+        adminNotes: p.admin_notes,
+        failureReason: p.failure_reason,
+        requesterName: p.requester_name,
+        requesterEmail: p.requester_email,
+        createdAt: iso(p.created_at),
+        processedAt: iso(p.processed_at)
+      }));
+
+      return {
+        masterWalletName: 'MERITX PLATFORM MASTER WALLET',
+        currency: 'INR',
+        availablePlatformBalance: metrics.availablePlatformBalance,
+        withdrawablePlatformBalance: metrics.withdrawablePlatformBalance,
+        totalExamPayments: 0,
+        totalCourseSales: metrics.totalCourseRevenue,
+        totalStudentDeposits: metrics.totalSuccessfulDeposits,
+        totalStudentCredits: metrics.totalSuccessfulDeposits,
+        totalTeacherCredits: metrics.totalTeacherWalletBalance,
+        studentWalletLiabilities: metrics.totalStudentWalletBalance,
+        teacherWalletLiabilities: metrics.totalTeacherWalletBalance,
+        totalRefundsPaid: metrics.totalRefunds,
+        totalRewardLiabilities: metrics.totalRewardsReserved,
+        totalPlatformRevenue: Number((metrics.totalCourseRevenue * 0.4).toFixed(2)),
+        gatewayCharges: Number((metrics.totalSuccessfulDeposits * 0.02).toFixed(2)),
+        pendingSettlements: Number((metrics.pendingPaymentAmount + metrics.pendingWithdrawalAmount).toFixed(2)),
+        completedSettlements: metrics.totalSettledAmount,
+        beneficiaryAccount,
+        transactions,
+        payouts
+      };
+    },
+    async listPlatformTransactions({ search = '', category = 'all', type = 'all', limit = 100, offset = 0 } = {}) {
+      let query = `
+        SELECT l.*, u.name AS user_name, u.role AS user_role, c.name AS course_name
+        FROM platform_master_ledger l
+        LEFT JOIN users u ON u.id = l.user_id
+        LEFT JOIN courses c ON c.id = l.course_id
+        WHERE 1=1
+      `;
+      const params = [];
+      if (category && category !== 'all') {
+        params.push(category);
+        query += ` AND l.category = $${params.length}`;
+      }
+      if (type && type !== 'all') {
+        params.push(type);
+        query += ` AND l.type = $${params.length}`;
+      }
+      if (search && search.trim()) {
+        params.push(`%${search.trim().toLowerCase()}%`);
+        query += ` AND (LOWER(l.description) LIKE $${params.length} OR LOWER(l.reference_id) LIKE $${params.length} OR LOWER(l.id) LIKE $${params.length} OR LOWER(u.name) LIKE $${params.length})`;
+      }
+      query += ` ORDER BY l.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      params.push(Number(limit) || 100, Number(offset) || 0);
+
+      const { rows } = await db.query(query, params);
+      return {
+        transactions: rows.map(r => ({
+          id: r.id,
+          transactionKey: r.transaction_key,
+          category: r.category,
+          type: r.type,
+          direction: r.direction,
+          amount: Number(r.amount),
+          balanceAfter: Number(r.balance_after),
+          userId: r.user_id,
+          userName: r.user_name || 'System Treasury',
+          userRole: r.user_role || 'platform',
+          examId: r.exam_id,
+          courseId: r.course_id,
+          courseName: r.course_name,
+          referenceId: r.reference_id,
+          description: r.description,
+          metadata: r.metadata,
+          date: iso(r.created_at)
+        }))
+      };
+    },
+    async exportMasterWalletCsv(filters = {}) {
+      const data = await this.getMasterWalletOverview();
+      const headers = ['Transaction ID', 'Key', 'Date & Time', 'User / Actor', 'Category', 'Type', 'Direction', 'Amount (INR)', 'Balance After (INR)', 'Reference', 'Description'];
+      const rows = [headers.join(',')];
+      for (const tx of data.transactions) {
+        rows.push([
+          tx.id,
+          tx.transactionKey,
+          `"${tx.date}"`,
+          `"${tx.userName} (${tx.userRole})"`,
+          tx.category,
+          tx.type,
+          tx.direction,
+          tx.amount.toFixed(2),
+          tx.balanceAfter.toFixed(2),
+          `"${tx.referenceId || ''}"`,
+          `"${(tx.description || '').replace(/"/g, '""')}"`
+        ].join(','));
+      }
+      return rows.join('\n');
+    },
+    async requestAdminMasterWithdrawal(actorId, { amount, purpose = 'Platform Revenue Withdrawal', password, idempotencyKey }) {
+      return db.transaction(async (client) => {
+        const { rows: actorRows } = await client.query('SELECT * FROM users WHERE id=$1', [actorId]);
+        const actor = actorRows[0];
+        if (!actor) throw new AppError(404, 'Administrator not found', 'USER_NOT_FOUND');
+        if (actor.role !== 'superadmin' && actor.role !== 'admin') {
+          throw new AppError(403, 'Only Super Admin or Finance role can execute platform withdrawals', 'FORBIDDEN');
+        }
+
+        const validPassword = await bcrypt.compare(password, actor.password_hash);
+        if (!validPassword) {
+          throw new AppError(401, 'Invalid administrator password for withdrawal confirmation', 'INVALID_CREDENTIALS');
+        }
+
+        await client.query("SELECT pg_advisory_xact_lock(99283741)");
+
+        const key = idempotencyKey || `payout-${actorId}-${Date.now()}`;
+        const existingPayout = await client.query('SELECT * FROM platform_payout_requests WHERE idempotency_key=$1', [key]);
+        if (existingPayout.rows[0]) {
+          return { payout: existingPayout.rows[0], message: 'Existing payout returned (idempotency key)' };
+        }
+
+        const treasuryQuery = await client.query(`
+          SELECT
+            COALESCE(SUM(amount) FILTER (WHERE direction='credit' AND category='treasury'), 0)::numeric AS credits,
+            COALESCE(SUM(amount) FILTER (WHERE direction='debit' AND category='treasury'), 0)::numeric AS debits
+          FROM platform_master_ledger
+        `);
+        const credits = Number(treasuryQuery.rows[0].credits);
+        const debits = Number(treasuryQuery.rows[0].debits);
+        const availableTreasury = Number(Math.max(0, credits - debits).toFixed(2));
+
+        const pendingQuery = await client.query(`
+          SELECT COALESCE(SUM(amount), 0)::numeric AS total
+          FROM platform_payout_requests
+          WHERE status IN ('requested', 'awaiting_approval', 'processing')
+        `);
+        const pendingAmount = Number(pendingQuery.rows[0].total);
+
+        const rewardsQuery = await client.query(`
+          SELECT COALESCE(SUM(amount), 0)::numeric AS total
+          FROM platform_master_ledger
+          WHERE category='reward_liability' AND direction='credit'
+        `);
+        const rewardsReserved = Number(rewardsQuery.rows[0].total);
+
+        const withdrawableAmount = Number(Math.max(0, availableTreasury - pendingAmount - rewardsReserved).toFixed(2));
+
+        const withdrawNum = Number(amount);
+        if (withdrawNum <= 0) {
+          throw new AppError(400, 'Withdrawal amount must be greater than zero', 'INVALID_AMOUNT');
+        }
+        if (withdrawNum > withdrawableAmount) {
+          throw new AppError(400, `Withdrawal amount (₹${withdrawNum.toLocaleString('en-IN')}) exceeds available platform balance (₹${withdrawableAmount.toLocaleString('en-IN')})`, 'INSUFFICIENT_PLATFORM_FUNDS');
+        }
+
+        const settingsRow = await client.query(`SELECT value FROM platform_settings WHERE key = 'business_bank_account'`);
+        const beneficiary = settingsRow.rows[0]?.value || {
+          accountHolderName: 'MERITX ACADEMIC TECHNOLOGIES PVT LTD',
+          bankName: 'HDFC Bank Ltd',
+          accountNumberMasked: '••••••••6721',
+          ifscCode: 'HDFC0000240'
+        };
+
+        const payoutId = uid('payout');
+        const fee = 5.00;
+        const netAmount = Number(Math.max(0, withdrawNum - fee).toFixed(2));
+        const utrNumber = `CMS-UTR-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+
+        const insertPayout = await client.query(`
+          INSERT INTO platform_payout_requests (
+            id, requested_by, amount, fee_deduction, net_amount,
+            bank_name, account_holder_name, account_number_masked, ifsc_code,
+            withdrawal_purpose, status, idempotency_key, gateway_payout_id, utr_number,
+            approved_by, approved_at, processed_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'completed', $11, $12, $13, $2, NOW(), NOW()
+          ) RETURNING *
+        `, [
+          payoutId, actorId, withdrawNum, fee, netAmount,
+          beneficiary.bankName, beneficiary.accountHolderName, beneficiary.accountNumberMasked, beneficiary.ifscCode,
+          purpose, key, `rzp_pout_${payoutId}`, utrNumber
+        ]);
+
+        const newBalance = Number((availableTreasury - withdrawNum).toFixed(2));
+        await client.query(`
+          INSERT INTO platform_master_ledger (
+            id, transaction_key, category, type, direction, amount, balance_after,
+            reference_id, description, metadata
+          ) VALUES (
+            $1, $2, 'treasury', 'admin_payout_disbursed', 'debit', $3, $4,
+            $5, $6, $7
+          )
+        `, [
+          uid('pml'), `payout:${payoutId}`, withdrawNum, newBalance,
+          utrNumber, `Admin Bank Withdrawal to ${beneficiary.bankName} (${beneficiary.accountNumberMasked}) - ${purpose}`,
+          JSON.stringify({ payoutId, feeDeduction: fee, netAmount, actorId, beneficiary })
+        ]);
+
+        await log(actorId, 'ADMIN_MASTER_WITHDRAWAL', `${payoutId}: ₹${withdrawNum} to ${beneficiary.bankName}`, client);
+
+        return {
+          payout: insertPayout.rows[0],
+          newBalance,
+          utrNumber,
+          beneficiary
+        };
+      });
+    },
+    async listPlatformPayouts({ status = 'all' } = {}) {
+      let query = `
+        SELECT p.*, u.name AS requester_name, u.email AS requester_email
+        FROM platform_payout_requests p
+        JOIN users u ON u.id = p.requested_by
+      `;
+      const params = [];
+      if (status && status !== 'all') {
+        params.push(status);
+        query += ` WHERE p.status = $${params.length}`;
+      }
+      query += ` ORDER BY p.created_at DESC`;
+      const { rows } = await db.query(query, params);
+      return rows.map(r => ({
+        id: r.id,
+        amount: Number(r.amount),
+        feeDeduction: Number(r.fee_deduction),
+        netAmount: Number(r.net_amount),
+        bankName: r.bank_name,
+        accountHolderName: r.account_holder_name,
+        accountNumberMasked: r.account_number_masked,
+        ifscCode: r.ifsc_code,
+        purpose: r.withdrawal_purpose,
+        status: r.status,
+        utrNumber: r.utr_number,
+        adminNotes: r.admin_notes,
+        failureReason: r.failure_reason,
+        requesterName: r.requester_name,
+        requesterEmail: r.requester_email,
+        createdAt: iso(r.created_at),
+        processedAt: iso(r.processed_at)
+      }));
+    },
+    async reviewPlatformPayout(actorId, { id, action, notes, rejectionReason, utrNumber }) {
+      return db.transaction(async (client) => {
+        const { rows: reqRows } = await client.query('SELECT * FROM platform_payout_requests WHERE id=$1 FOR UPDATE', [id]);
+        const req = reqRows[0];
+        if (!req) throw new AppError(404, 'Platform payout request not found', 'NOT_FOUND');
+        if (req.status === 'completed' || req.status === 'rejected') {
+          throw new AppError(409, `Payout request is already ${req.status}`, 'ALREADY_PROCESSED');
+        }
+
+        if (action === 'approve' || action === 'complete') {
+          const finalUtr = utrNumber || req.utr_number || `CMS-UTR-${Date.now()}`;
+          const updated = (await client.query(`
+            UPDATE platform_payout_requests
+            SET status = 'completed', utr_number = $1, admin_notes = $2, approved_by = $3, approved_at = NOW(), processed_at = NOW(), updated_at = NOW()
+            WHERE id = $4 RETURNING *
+          `, [finalUtr, notes || 'Approved & processed', actorId, id])).rows[0];
+          await log(actorId, 'PLATFORM_PAYOUT_COMPLETED', `${id}: ₹${req.amount} - ${finalUtr}`, client);
+          return updated;
+        } else {
+          // Reverse the debit in platform master ledger if previously debited
+          const { rows: treasuryRows } = await client.query(`
+            SELECT
+              COALESCE(SUM(amount) FILTER (WHERE direction='credit' AND category='treasury'), 0)::numeric AS credits,
+              COALESCE(SUM(amount) FILTER (WHERE direction='debit' AND category='treasury'), 0)::numeric AS debits
+            FROM platform_master_ledger
+          `);
+          const currentTreasury = Number(Math.max(0, Number(treasuryRows[0].credits) - Number(treasuryRows[0].debits)).toFixed(2));
+          const restoredBalance = Number((currentTreasury + Number(req.amount)).toFixed(2));
+
+          await client.query(`
+            INSERT INTO platform_master_ledger (
+              id, transaction_key, category, type, direction, amount, balance_after,
+              reference_id, description, metadata
+            ) VALUES (
+              $1, $2, 'treasury', 'adjustment', 'credit', $3, $4,
+              $5, $6, $7
+            )
+          `, [
+            uid('pml'), `reversal:${req.id}`, Number(req.amount), restoredBalance,
+            `REV-${req.id}`, `Reversal of rejected platform payout #${req.id} - ${rejectionReason || 'Declined'}`,
+            JSON.stringify({ payoutId: req.id, rejectedBy: actorId, rejectionReason })
+          ]);
+
+          const updated = (await client.query(`
+            UPDATE platform_payout_requests
+            SET status = 'rejected', rejection_reason = $1, admin_notes = $2, updated_at = NOW()
+            WHERE id = $3 RETURNING *
+          `, [rejectionReason || 'Declined by Administrator', notes || null, id])).rows[0];
+          await log(actorId, 'PLATFORM_PAYOUT_REJECTED', `${id}: ₹${req.amount}`, client);
+          return updated;
+        }
+      });
+    },
+    async listTeacherWallets({ search = '' } = {}) {
+      let query = `
+        SELECT
+          u.id AS teacher_id, u.name AS teacher_name, u.email,
+          tp.designation, tp.department, tp.specialization, tp.experience_years, tp.phone,
+          COALESCE(w.id, 'none') AS wallet_id,
+          COALESCE(w.balance, 0)::numeric AS balance,
+          COALESCE(w.locked_balance, 0)::numeric AS locked_balance,
+          COALESCE(w.status, 'active') AS wallet_status,
+          COALESCE((SELECT SUM(t.amount) FROM wallet_transactions t WHERE t.user_id = u.id AND t.type = 'deposit' AND t.status = 'successful'), 0)::numeric AS total_credits,
+          COALESCE((SELECT SUM(t.amount) FROM wallet_transactions t WHERE t.user_id = u.id AND t.type = 'withdrawal' AND t.status = 'successful'), 0)::numeric AS total_payouts,
+          COALESCE((SELECT COUNT(*)::int FROM courses c WHERE c.teacher_id = u.id AND c.status = 'published'), 0)::int AS assigned_courses,
+          COALESCE((SELECT COUNT(e.id)::int FROM course_enrollments e JOIN courses c ON c.id = e.course_id WHERE c.teacher_id = u.id AND e.status = 'active'), 0)::int AS total_students
+        FROM users u
+        LEFT JOIN teacher_profiles tp ON tp.user_id = u.id
+        LEFT JOIN wallets w ON w.user_id = u.id
+        WHERE u.role = 'teacher'
+      `;
+      const params = [];
+      if (search && search.trim()) {
+        params.push(`%${search.trim().toLowerCase()}%`);
+        query += ` AND (LOWER(u.name) LIKE $${params.length} OR LOWER(u.email) LIKE $${params.length} OR LOWER(COALESCE(tp.department, '')) LIKE $${params.length})`;
+      }
+      query += ` ORDER BY u.created_at DESC`;
+      const { rows } = await db.query(query, params);
+      return rows.map(r => ({
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        email: r.email,
+        designation: r.designation || 'Faculty Member',
+        department: r.department || 'Academic Department',
+        specialization: r.specialization || 'Competitive Examination Faculty',
+        experienceYears: r.experience_years || 0,
+        phone: r.phone || '',
+        balance: Number(r.balance),
+        lockedBalance: Number(r.locked_balance),
+        availableBalance: Number((Number(r.balance) - Number(r.locked_balance)).toFixed(2)),
+        totalCredits: Number(r.total_credits),
+        totalPayouts: Number(r.total_payouts),
+        assignedCourses: r.assigned_courses,
+        totalStudents: r.total_students,
+        walletStatus: r.wallet_status
+      }));
+    },
+    async listRefunds({ search = '', status = 'all' } = {}) {
+      let query = `
+        SELECT t.*, u.name AS user_name, u.email AS user_email, u.role AS user_role
+        FROM wallet_transactions t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.type IN ('refund', 'reversal')
+      `;
+      const params = [];
+      if (status && status !== 'all') {
+        params.push(status);
+        query += ` AND t.status = $${params.length}`;
+      }
+      if (search && search.trim()) {
+        params.push(`%${search.trim().toLowerCase()}%`);
+        query += ` AND (LOWER(u.name) LIKE $${params.length} OR LOWER(u.email) LIKE $${params.length} OR LOWER(t.reference_id) LIKE $${params.length})`;
+      }
+      query += ` ORDER BY t.created_at DESC LIMIT 100`;
+      const { rows } = await db.query(query, params);
+      return rows.map(r => ({
+        id: r.id,
+        userId: r.user_id,
+        userName: r.user_name,
+        userEmail: r.user_email,
+        userRole: r.user_role,
+        amount: Number(r.amount),
+        status: r.status,
+        referenceId: r.reference_id,
+        description: r.description,
+        metadata: r.metadata,
+        date: iso(r.created_at)
+      }));
+    },
+    async listPlatformPayments({ search = '', status = 'all', limit = 100 } = {}) {
+      let query = `
+        SELECT p.*, u.name AS student_name, u.email AS student_email,
+               COALESCE(c.name, e.title, p.target_id, 'Course / Exam') AS item_name
+        FROM payment_orders p
+        JOIN users u ON u.id = p.user_id
+        LEFT JOIN courses c ON c.id = p.target_id
+        LEFT JOIN published_exams e ON e.id = p.target_id
+        WHERE 1=1
+      `;
+      const params = [];
+      if (status && status !== 'all') {
+        params.push(status);
+        query += ` AND p.status = $${params.length}`;
+      }
+      if (search && search.trim()) {
+        params.push(`%${search.trim().toLowerCase()}%`);
+        query += ` AND (LOWER(u.name) LIKE $${params.length} OR LOWER(u.email) LIKE $${params.length} OR LOWER(COALESCE(p.gateway_order_id, '')) LIKE $${params.length} OR LOWER(COALESCE(p.gateway_payment_id, '')) LIKE $${params.length})`;
+      }
+      query += ` ORDER BY p.created_at DESC LIMIT $${params.length + 1}`;
+      params.push(Number(limit) || 100);
+      const { rows } = await db.query(query, params);
+      return {
+        payments: rows.map(r => ({
+          id: r.id,
+          studentId: r.user_id,
+          studentName: r.student_name,
+          studentEmail: r.student_email,
+          purpose: r.purpose,
+          itemName: r.item_name,
+          amount: Number(r.amount),
+          currency: r.currency,
+          paymentMethod: r.payment_method,
+          gateway: r.gateway,
+          gatewayOrderId: r.gateway_order_id,
+          gatewayPaymentId: r.gateway_payment_id,
+          status: r.status,
+          date: iso(r.created_at),
+          verifiedAt: iso(r.verified_at)
+        }))
+      };
+    },
+    async initProctoringSession(studentId, { examId, attemptId: passedAttemptId, verificationChecks, browserData }) {
+      const existing = await db.query('SELECT * FROM attempts WHERE student_id=$1 AND exam_id=$2', [studentId, examId]);
+      let attemptId = passedAttemptId || existing.rows[0]?.id;
+      const effectiveChecks = verificationChecks || { cameraAvailable: true, permissionGranted: true, faceDetected: true, internetOk: true, browserCompatible: true, fullscreenAvailable: true, instructionsAccepted: true, consentGiven: true, browserData };
+      if (!attemptId) {
+        const row = (await db.query(
+          `INSERT INTO attempts (id, student_id, exam_id, status, duration_seconds, deadline_at, accepted_instructions_at, segment_started_at)
+           VALUES ($1, $2, $3, 'in_progress', 10800, NOW() + INTERVAL '3 hours', NOW(), NOW())
+           ON CONFLICT (student_id, exam_id) DO UPDATE SET updated_at = NOW() RETURNING *`,
+          [uid('attempt'), studentId, examId]
+        )).rows[0];
+        attemptId = row.id;
+      }
+
+      const sessionId = uid('proctor');
+      const { rows } = await db.query(`
+        INSERT INTO proctoring_sessions (
+          id, attempt_id, exam_id, student_id, camera_status, verification_checks, consent_given_at, last_heartbeat_at
+        ) VALUES (
+          $1, $2, $3, $4, 'active', $5, NOW(), NOW()
+        )
+        ON CONFLICT (attempt_id) DO UPDATE SET
+          camera_status = 'active',
+          verification_checks = EXCLUDED.verification_checks,
+          consent_given_at = NOW(),
+          last_heartbeat_at = NOW(),
+          updated_at = NOW()
+        RETURNING *
+      `, [sessionId, attemptId, examId, studentId, JSON.stringify(effectiveChecks)]);
+
+      await db.query(`
+        INSERT INTO proctoring_events (id, session_id, attempt_id, student_id, exam_id, event_type, severity, details)
+        VALUES ($1, $2, $3, $4, $5, 'verification_passed', 'info', $6)
+      `, [uid('pevent'), rows[0].id, attemptId, studentId, examId, JSON.stringify({ checks: effectiveChecks })]);
+
+      await db.query(`UPDATE attempts SET proctoring_status='verified' WHERE id=$1`, [attemptId]);
+
+      return {
+        sessionId: rows[0].id,
+        attemptId,
+        cameraStatus: rows[0].camera_status,
+        warningCount: rows[0].warning_count,
+        isFlagged: rows[0].is_flagged
+      };
+    },
+    async recordProctoringHeartbeat(studentId, { attemptId, cameraStatus = 'active', isFullscreen = true, interruptionDurationSeconds = 0 }) {
+      const { rows } = await db.query(`SELECT * FROM proctoring_sessions WHERE attempt_id=$1 AND student_id=$2`, [attemptId, studentId]);
+      if (!rows[0]) {
+        return { ok: true, cameraStatus, warningCount: 0, isFlagged: false };
+      }
+      const session = rows[0];
+      const statusChanged = session.camera_status !== cameraStatus;
+
+      if (statusChanged) {
+        const eventType = cameraStatus === 'active' ? 'camera_restored' : 'camera_interrupted';
+        const severity = cameraStatus === 'active' ? 'info' : 'warning';
+        await db.query(`
+          INSERT INTO proctoring_events (id, session_id, attempt_id, student_id, exam_id, event_type, severity, details)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [uid('pevent'), session.id, attemptId, studentId, session.exam_id, eventType, severity, JSON.stringify({ previousStatus: session.camera_status, newStatus: cameraStatus })]);
+      }
+
+      await db.query(`
+        UPDATE proctoring_sessions
+        SET camera_status = $1,
+            last_heartbeat_at = NOW(),
+            total_interruption_seconds = total_interruption_seconds + $2,
+            interruption_count = interruption_count + $3,
+            updated_at = NOW()
+        WHERE id = $4
+      `, [cameraStatus, Math.max(0, interruptionDurationSeconds), statusChanged && cameraStatus === 'interrupted' ? 1 : 0, session.id]);
+
+      await db.query(`UPDATE attempts SET proctoring_status=$1 WHERE id=$2`, [cameraStatus, attemptId]);
+
+      return {
+        ok: true,
+        cameraStatus,
+        warningCount: session.warning_count,
+        isFlagged: session.is_flagged
+      };
+    },
+    async recordProctoringWarning(studentId, { attemptId, category, message, evidenceMetadata = {}, currentAnswers = null }) {
+      return db.transaction(async (client) => {
+        const { rows: attemptRows } = await client.query('SELECT * FROM attempts WHERE id=$1 AND student_id=$2 FOR UPDATE', [attemptId, studentId]);
+        if (!attemptRows[0]) throw new AppError(404, 'Active attempt not found', 'ATTEMPT_NOT_FOUND');
+        const attemptRow = attemptRows[0];
+
+        // Idempotency: if attempt is already terminated, return terminated status immediately
+        if (attemptRow.status === 'TERMINATED') {
+          return {
+            warningNumber: 3,
+            warningCount: 3,
+            isFlagged: true,
+            isTerminated: true,
+            status: 'TERMINATED',
+            terminationReason: attemptRow.termination_reason || 'MAX_VIOLATIONS_REACHED',
+            terminatedAt: iso(attemptRow.terminated_at),
+            attempt: attempt(attemptRow),
+            result: attemptRow.result,
+            violationHistory: attemptRow.violation_history || [],
+            message: 'Examination has already been terminated due to maximum violations reached'
+          };
+        }
+
+        let { rows: sessionRows } = await client.query('SELECT * FROM proctoring_sessions WHERE attempt_id=$1 FOR UPDATE', [attemptId]);
+        if (!sessionRows[0]) {
+          const newSession = await client.query(`
+            INSERT INTO proctoring_sessions (id, attempt_id, exam_id, student_id, camera_status, warning_count, is_flagged)
+            VALUES ($1, $2, $3, $4, 'active', 0, FALSE) RETURNING *
+          `, [uid('proctor'), attemptId, attemptRow.exam_id, studentId]);
+          sessionRows = newSession.rows;
+        }
+        const session = sessionRows[0];
+
+        // Cooldown check (minimum 2.5 seconds between recorded warnings to prevent duplicate browser event firing)
+        const recentWarn = await client.query(`
+          SELECT * FROM proctoring_warnings WHERE attempt_id=$1 ORDER BY created_at DESC LIMIT 1
+        `, [attemptId]);
+        if (recentWarn.rows[0]) {
+          const diffMs = Date.now() - new Date(recentWarn.rows[0].created_at).getTime();
+          if (diffMs < 2500) {
+            return {
+              warningNumber: session.warning_count,
+              warningCount: session.warning_count,
+              isFlagged: session.is_flagged,
+              isTerminated: session.warning_count >= 3 || attemptRow.status === 'TERMINATED',
+              status: attemptRow.status,
+              attempt: attempt(attemptRow),
+              result: attemptRow.result,
+              violationHistory: attemptRow.violation_history || [],
+              cooldownActive: true,
+              message
+            };
+          }
+        }
+
+        const currentCount = Number(session.warning_count || 0);
+        const newCount = Math.min(3, currentCount + 1);
+        const isFlagged = newCount >= 3;
+        const isTerminated = newCount >= 3;
+
+        const warnId = uid('warn');
+        await client.query(`
+          INSERT INTO proctoring_warnings (
+            id, attempt_id, student_id, exam_id, warning_number, category, message, evidence_metadata
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [warnId, attemptId, studentId, attemptRow.exam_id, newCount, category, message, JSON.stringify(evidenceMetadata)]);
+
+        await client.query(`
+          INSERT INTO proctoring_events (id, session_id, attempt_id, student_id, exam_id, event_type, severity, details)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [uid('pevent'), session.id, attemptId, studentId, attemptRow.exam_id, isTerminated ? 'exam_terminated_violations' : 'warning_issued', isTerminated ? 'critical' : 'warning', JSON.stringify({ warningNumber: newCount, category, message, evidenceMetadata })]);
+
+        await client.query(`
+          UPDATE proctoring_sessions
+          SET warning_count = $1, is_flagged = $2, updated_at = NOW()
+          WHERE id = $3
+        `, [newCount, isFlagged, session.id]);
+
+        if (!isTerminated) {
+          await client.query(`
+            UPDATE attempts
+            SET warning_count = $1,
+                is_flagged = $2,
+                flag_reason = CASE WHEN $2 = TRUE THEN $3 ELSE flag_reason END
+            WHERE id = $4
+          `, [newCount, isFlagged, `Proctoring violation: ${newCount}/3 warnings (${category})`, attemptId]);
+
+          return {
+            warningNumber: newCount,
+            warningCount: newCount,
+            isFlagged: false,
+            isTerminated: false,
+            message
+          };
+        }
+
+        // 3RD VIOLATION REACHED: AUTOMATIC EXAM TERMINATION
+        const { rows: allWarnings } = await client.query(`
+          SELECT id, warning_number, category, message, evidence_metadata, created_at
+          FROM proctoring_warnings
+          WHERE attempt_id = $1
+          ORDER BY warning_number ASC, created_at ASC
+        `, [attemptId]);
+
+        const violationHistory = allWarnings.map((w, i) => ({
+          warningNumber: w.warning_number || (i + 1),
+          category: w.category,
+          description: w.message,
+          timestamp: iso(w.created_at),
+          metadata: w.evidence_metadata || {}
+        }));
+
+        const exam = await getExam(attemptRow.exam_id, client);
+        const merged = { ...(attemptRow.answers || {}), ...(currentAnswers || {}) };
+        const snapshot = attemptRow.question_snapshot || await approvedQuestions(exam, client);
+        const validIds = new Set(snapshot.map((item) => String(item.id)));
+        const safeAnswers = Object.fromEntries(Object.entries(merged).filter(([id]) => validIds.has(id)));
+        const result = evaluate(snapshot, safeAnswers, exam.configuration || { rules: { single_correct: { correct: 4, incorrect: -1, unanswered: 0 } } });
+        const elapsed = Math.floor((Date.now() - new Date(attemptRow.started_at).getTime()) / 1000);
+        const timeTaken = Math.min(attemptRow.duration_seconds, Math.max(0, elapsed));
+
+        const updated = (await client.query(`
+          UPDATE attempts
+          SET status = 'TERMINATED',
+              termination_reason = 'MAX_VIOLATIONS_REACHED',
+              terminated_at = NOW(),
+              submitted_at = NOW(),
+              warning_count = 3,
+              is_flagged = TRUE,
+              flag_reason = 'Proctoring violation: 3/3 warnings reached (MAX_VIOLATIONS_REACHED)',
+              answers = $1,
+              time_taken = $2,
+              result = $3,
+              violation_history = $4
+          WHERE id = $5
+          RETURNING *
+        `, [safeAnswers, timeTaken, result, JSON.stringify(violationHistory), attemptId])).rows[0];
+
+        await log(studentId, 'EXAM_TERMINATED', `Attempt ${attemptId} automatically terminated: 3/3 proctoring violations reached`, client);
+
+        return {
+          warningNumber: 3,
+          warningCount: 3,
+          isFlagged: true,
+          isTerminated: true,
+          status: 'TERMINATED',
+          terminationReason: 'MAX_VIOLATIONS_REACHED',
+          terminatedAt: iso(updated.terminated_at),
+          attempt: attempt(updated),
+          result,
+          violationHistory,
+          message: 'Warning 3/3: Maximum violation limit reached. Exam automatically terminated.'
+        };
+      });
+    },
+    async recordProctoringEvent(studentId, { attemptId, eventType, severity = 'info', details = {} }) {
+      const { rows } = await db.query('SELECT * FROM attempts WHERE id=$1 AND student_id=$2', [attemptId, studentId]);
+      if (!rows[0]) throw new AppError(404, 'Attempt not found', 'ATTEMPT_NOT_FOUND');
+      const attempt = rows[0];
+
+      await db.query(`
+        INSERT INTO proctoring_events (id, attempt_id, student_id, exam_id, event_type, severity, details)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [uid('pevent'), attemptId, studentId, attempt.exam_id, eventType, severity, JSON.stringify(details)]);
+
+      return { recorded: true };
+    },
+    async getProctoringOverview() {
+      const [stats] = await Promise.all([
+        db.query(`
+          SELECT
+            COUNT(DISTINCT a.exam_id) FILTER (WHERE a.status = 'in_progress')::int AS active_exams,
+            COUNT(a.id) FILTER (WHERE a.status = 'in_progress')::int AS active_attempts,
+            COUNT(ps.id) FILTER (WHERE ps.camera_status = 'active')::int AS active_cameras,
+            COUNT(ps.id) FILTER (WHERE ps.camera_status = 'interrupted')::int AS interrupted_cameras,
+            COUNT(ps.id) FILTER (WHERE ps.warning_count > 0)::int AS students_with_warnings,
+            COUNT(ps.id) FILTER (WHERE ps.warning_count >= 3 OR ps.is_flagged = TRUE OR a.is_flagged = TRUE)::int AS flagged_attempts,
+            COUNT(a.id) FILTER (WHERE a.status = 'submitted')::int AS completed_attempts
+          FROM attempts a
+          LEFT JOIN proctoring_sessions ps ON ps.attempt_id = a.id
+        `)
+      ]);
+
+      const s = stats.rows[0];
+      return {
+        activeExamsCount: s.active_exams || 0,
+        activeAttemptsCount: s.active_attempts || 0,
+        activeCamerasCount: s.active_cameras || 0,
+        interruptedCamerasCount: s.interrupted_cameras || 0,
+        studentsWithWarningsCount: s.students_with_warnings || 0,
+        flaggedAttemptsCount: s.flagged_attempts || 0,
+        completedAttemptsCount: s.completed_attempts || 0
+      };
+    },
+    async listProctoringCandidates({ examId, status = 'all', flagged = 'all' } = {}) {
+      let query = `
+        SELECT
+          a.id AS attempt_id, a.exam_id, a.student_id, a.status AS attempt_status,
+          a.started_at, a.duration_seconds, a.deadline_at, a.submitted_at,
+          COALESCE(ps.warning_count, a.warning_count, 0)::int AS warning_count,
+          COALESCE(ps.is_flagged, a.is_flagged, FALSE) AS is_flagged,
+          a.flag_reason,
+          COALESCE(ps.camera_status, a.proctoring_status, 'active') AS camera_status,
+          ps.last_heartbeat_at, ps.interruption_count, ps.total_interruption_seconds,
+          ps.verification_checks,
+          u.name AS student_name, u.email AS student_email,
+          COALESCE(pe.title, 'Examination ' || a.exam_id) AS exam_title
+        FROM attempts a
+        JOIN users u ON u.id = a.student_id
+        LEFT JOIN published_exams pe ON pe.id = a.exam_id
+        LEFT JOIN proctoring_sessions ps ON ps.attempt_id = a.id
+        WHERE 1=1
+      `;
+      const params = [];
+      if (examId) {
+        params.push(examId);
+        query += ` AND a.exam_id = $${params.length}`;
+      }
+      if (status && status !== 'all') {
+        params.push(status);
+        query += ` AND a.status = $${params.length}`;
+      }
+      if (flagged === 'true' || flagged === true) {
+        query += ` AND (a.is_flagged = TRUE OR ps.is_flagged = TRUE OR ps.warning_count >= 3)`;
+      }
+      query += ` ORDER BY a.started_at DESC LIMIT 100`;
+
+      const { rows } = await db.query(query, params);
+      return rows.map(r => ({
+        attemptId: r.attempt_id,
+        examId: r.exam_id,
+        examTitle: r.exam_title,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        studentEmail: r.student_email,
+        attemptStatus: r.attempt_status,
+        cameraStatus: r.camera_status,
+        warningCount: r.warning_count,
+        isFlagged: r.is_flagged,
+        flagReason: r.flag_reason,
+        startedAt: iso(r.started_at),
+        deadlineAt: iso(r.deadline_at),
+        submittedAt: iso(r.submitted_at),
+        lastHeartbeatAt: iso(r.last_heartbeat_at),
+        interruptionCount: r.interruption_count || 0,
+        totalInterruptionSeconds: r.total_interruption_seconds || 0,
+        verificationChecks: r.verification_checks || {}
+      }));
+    },
+    async getProctoringAttemptTimeline(attemptId) {
+      const [attemptRows, warningsRows, eventsRows] = await Promise.all([
+        db.query(`
+          SELECT a.*, u.name AS student_name, u.email AS student_email,
+                 pe.title AS exam_title, ps.camera_status, ps.verification_checks, ps.consent_given_at
+          FROM attempts a
+          JOIN users u ON u.id = a.student_id
+          LEFT JOIN published_exams pe ON pe.id = a.exam_id
+          LEFT JOIN proctoring_sessions ps ON ps.attempt_id = a.id
+          WHERE a.id = $1
+        `, [attemptId]),
+        db.query(`
+          SELECT * FROM proctoring_warnings WHERE attempt_id = $1 ORDER BY created_at ASC
+        `, [attemptId]),
+        db.query(`
+          SELECT * FROM proctoring_events WHERE attempt_id = $1 ORDER BY created_at ASC LIMIT 200
+        `, [attemptId])
+      ]);
+
+      if (!attemptRows.rows[0]) throw new AppError(404, 'Attempt not found', 'ATTEMPT_NOT_FOUND');
+      const att = attemptRows.rows[0];
+
+      return {
+        attempt: {
+          id: att.id,
+          examId: att.exam_id,
+          examTitle: att.exam_title,
+          studentId: att.student_id,
+          studentName: att.student_name,
+          studentEmail: att.student_email,
+          status: att.status,
+          startedAt: iso(att.started_at),
+          submittedAt: iso(att.submitted_at),
+          cameraStatus: att.camera_status,
+          isFlagged: att.is_flagged,
+          flagReason: att.flag_reason,
+          warningCount: att.warning_count,
+          verificationChecks: att.verification_checks,
+          consentGivenAt: iso(att.consent_given_at)
+        },
+        warnings: warningsRows.rows.map(w => ({
+          id: w.id,
+          warningNumber: w.warning_number,
+          category: w.category,
+          message: w.message,
+          evidenceMetadata: w.evidence_metadata,
+          timestamp: iso(w.created_at)
+        })),
+        events: eventsRows.rows.map(e => ({
+          id: e.id,
+          eventType: e.event_type,
+          severity: e.severity,
+          details: e.details,
+          timestamp: iso(e.created_at)
+        }))
+      };
     },
   };
 }

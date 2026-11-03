@@ -51,7 +51,7 @@ export function createApiRouter({ controller, service, env }) {
   router.get('/wallet/withdrawals', authenticate, authorize('student'), controller.studentWithdrawals);
   router.get('/me/wallet/withdrawals', authenticate, authorize('student'), controller.studentWithdrawals);
   router.post('/courses/:id/enroll', submissions, authenticate, authorize('student'), controller.enrollCourse);
-  router.post('/me/courses/enroll', submissions, authenticate, authorize('student'), controller.enrollCourse);
+  router.post('/me/courses/enroll', submissions, authenticate, authorize('student'), validateBody(schemas.courseEnrollment), controller.enrollCourse);
   router.post(
     "/exams/register",
     submissions,
@@ -84,6 +84,17 @@ export function createApiRouter({ controller, service, env }) {
     validateBody(schemas.attemptSubmit),
     controller.submitAttempt,
   );
+  router.post(
+    "/attempts/terminate",
+    authenticate,
+    authorize("student"),
+    validateBody(schemas.attemptTerminate),
+    controller.terminateAttempt,
+  );
+  router.post('/proctoring/session/init', authenticate, authorize('student'), validateBody(schemas.proctoringSessionInit), controller.proctoringInit);
+  router.post('/proctoring/heartbeat', authenticate, authorize('student'), validateBody(schemas.proctoringHeartbeat), controller.proctoringHeartbeat);
+  router.post('/proctoring/warning', authenticate, authorize('student'), validateBody(schemas.proctoringWarning), controller.proctoringWarning);
+  router.post('/proctoring/event', authenticate, authorize('student'), validateBody(schemas.proctoringEvent), controller.proctoringEvent);
   router.get(
     "/teacher/papers",
     authenticate,
@@ -114,12 +125,29 @@ export function createApiRouter({ controller, service, env }) {
     controller.overview,
   );
   router.get('/admin/finance/overview', authenticate, authorize('admin', 'superadmin'), controller.adminFinanceOverview);
+  router.get('/admin/finance/master-wallet', authenticate, authorize('admin', 'superadmin'), controller.adminMasterWallet);
+  router.get('/admin/finance/master-wallet/transactions', authenticate, authorize('admin', 'superadmin'), controller.adminMasterWalletTransactions);
+  router.get('/admin/finance/master-wallet/export', authenticate, authorize('admin', 'superadmin'), controller.adminExportMasterWalletCsv);
+  router.post('/admin/finance/master-wallet/withdraw', submissions, authenticate, authorize('admin', 'superadmin'), validateBody(schemas.adminMasterWithdrawal), controller.adminMasterWithdraw);
+  router.get('/admin/finance/master-wallet/payouts', authenticate, authorize('admin', 'superadmin'), controller.adminPlatformPayouts);
+  router.post('/admin/finance/master-wallet/payouts/:id/review', submissions, authenticate, authorize('superadmin'), validateBody(schemas.adminPayoutReview), controller.adminReviewPlatformPayout);
+  router.get('/admin/finance/teachers', authenticate, authorize('admin', 'superadmin'), controller.adminTeacherWallets);
+  router.get('/admin/finance/refunds', authenticate, authorize('admin', 'superadmin'), controller.adminRefunds);
+  router.get('/admin/finance/payments', authenticate, authorize('admin', 'superadmin'), controller.adminPlatformPayments);
   router.get('/admin/wallets', authenticate, authorize('admin', 'superadmin'), controller.adminWallets);
+  router.get('/admin/finance/wallets', authenticate, authorize('admin', 'superadmin'), controller.adminWallets);
   router.get('/admin/wallets/:studentId', authenticate, authorize('admin', 'superadmin'), controller.adminStudentWalletDetails);
+  router.get('/admin/finance/wallets/:studentId', authenticate, authorize('admin', 'superadmin'), controller.adminStudentWalletDetails);
   router.get('/admin/withdrawals', authenticate, authorize('admin', 'superadmin'), controller.adminWithdrawals);
+  router.get('/admin/finance/withdrawals', authenticate, authorize('admin', 'superadmin'), controller.adminWithdrawals);
   router.post('/admin/withdrawals/:id/review', submissions, authenticate, authorize('admin', 'superadmin'), validateBody(schemas.adminWithdrawalAction), controller.reviewWithdrawal);
+  router.post('/admin/finance/withdrawals/:id/review', submissions, authenticate, authorize('admin', 'superadmin'), validateBody(schemas.adminWithdrawalAction), controller.reviewWithdrawal);
+  router.post('/admin/finance/withdrawals/:id', submissions, authenticate, authorize('admin', 'superadmin'), validateBody(schemas.adminWithdrawalAction), controller.reviewWithdrawal);
   router.get('/admin/finance/reports', authenticate, authorize('admin', 'superadmin'), controller.adminFinancialReports);
   router.get('/admin/finance/reports/export-csv', authenticate, authorize('admin', 'superadmin'), controller.exportFinancialCsv);
+  router.get('/admin/proctoring/overview', authenticate, authorize('admin', 'superadmin'), controller.adminProctoringOverview);
+  router.get('/admin/proctoring/candidates', authenticate, authorize('admin', 'superadmin'), controller.adminProctoringCandidates);
+  router.get('/admin/proctoring/attempts/:attemptId/timeline', authenticate, authorize('admin', 'superadmin'), controller.adminProctoringTimeline);
   router.post(
     "/admin/papers/approve",
     authenticate,

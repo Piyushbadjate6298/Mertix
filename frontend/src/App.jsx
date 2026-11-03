@@ -55,6 +55,7 @@ import {
   Transactions,
   Audit,
 } from "./pages/superadmin/Finance";
+import LiveProctoringDashboard from "./pages/admin/LiveProctoring";
 
 function Protected({ role, children }) {
   const { user } = useAuth(),
@@ -112,6 +113,7 @@ export default function App() {
           {/* Admin Routes */}
           <Route path="/admin" element={protect("admin", AdminDashboard)} />
           <Route path="/admin/finance" element={protect("admin", FinanceDashboard)} />
+          <Route path="/admin/proctoring" element={protect("admin", LiveProctoringDashboard)} />
           <Route path="/admin/wallets" element={protect("admin", StudentWalletManagement)} />
           <Route path="/admin/withdrawals" element={protect("admin", WithdrawalManagement)} />
           <Route path="/admin/reports" element={protect("admin", FinancialReports)} />
@@ -128,6 +130,8 @@ export default function App() {
 
           {/* Superadmin Routes */}
           <Route path="/superadmin" element={protect("superadmin", FinanceDashboard)} />
+          <Route path="/superadmin/finance" element={protect("superadmin", FinanceDashboard)} />
+          <Route path="/superadmin/proctoring" element={protect("superadmin", LiveProctoringDashboard)} />
           <Route path="/superadmin/wallets" element={protect("superadmin", StudentWalletManagement)} />
           <Route path="/superadmin/withdrawals" element={protect("superadmin", WithdrawalManagement)} />
           <Route path="/superadmin/reports" element={protect("superadmin", FinancialReports)} />

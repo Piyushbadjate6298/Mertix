@@ -24,6 +24,8 @@ import {
   FileSpreadsheet,
   UserCheck,
   Plus,
+  Video,
+  Eye,
 } from "lucide-react";
 import Brand from "./Brand";
 import { useAuth } from "../context/AuthContext";
@@ -53,7 +55,8 @@ export const routes = {
   ],
   admin: [
     ["/admin", "Dashboard", LayoutDashboard],
-    ["/admin/finance", "Finance Command", Wallet],
+    ["/admin/finance", "Finance & Master Wallet", Wallet],
+    ["/admin/proctoring", "Live Exam Monitoring", Video],
     ["/admin/wallets", "Student Wallets", Users],
     ["/admin/withdrawals", "Withdrawals Workflow", ArrowUpRight],
     ["/admin/reports", "Financial Reports", FileSpreadsheet],
@@ -67,7 +70,8 @@ export const routes = {
     ["/admin/support", "Support Tickets", LifeBuoy],
   ],
   superadmin: [
-    ["/superadmin", "Finance Overview", LayoutDashboard],
+    ["/superadmin", "Finance & Master Wallet", Wallet],
+    ["/admin/proctoring", "Live Exam Monitoring", Video],
     ["/superadmin/wallets", "Student Wallets", Users],
     ["/superadmin/withdrawals", "Withdrawals Workflow", ArrowUpRight],
     ["/superadmin/reports", "Financial Reports", FileSpreadsheet],

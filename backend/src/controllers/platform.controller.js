@@ -46,7 +46,11 @@ export function createPlatformController({ service, emailService, env }) {
     verifyDepositOrder: async (req, res) => success(res, await service.verifyDepositOrder(req.user.id, req.validatedBody)),
     requestWithdrawal: async (req, res) => success(res, await service.requestWithdrawal(req.user.id, req.validatedBody), 201),
     studentWithdrawals: async (req, res) => success(res, { withdrawals: await service.listStudentWithdrawals(req.user.id) }),
-    enrollCourse: async (req, res) => success(res, await service.enrollCourse(req.user.id, req.params.id || req.validatedBody.courseId), 201),
+    enrollCourse: async (req, res) => {
+      const courseId = req.params?.id || req.validatedBody?.courseId || req.body?.courseId;
+      if (!courseId) throw new AppError(400, "Course ID is required", "COURSE_ID_REQUIRED");
+      return success(res, await service.enrollCourse(req.user.id, courseId), 201);
+    },
     studentCourses: async (req, res) => success(res, { courses: await service.listStudentCourses(req.user.id) }),
     getStudentProfile: async (req, res) => success(res, { profile: await service.getStudentProfile(req.user.id) }),
     updateStudentProfile: async (req, res) => success(res, { profile: await service.updateStudentProfile(req.user.id, req.validatedBody) }),
@@ -63,9 +67,10 @@ export function createPlatformController({ service, emailService, env }) {
     verifyPayment: async (req, res) => success(res, await service.verifyPayment(req.user.id, req.validatedBody)),
     markPaymentFailed: async (req, res) => success(res, { payment: await service.markPaymentFailed(req.user.id, req.validatedBody) }),
     paymentWebhook: async (req, res) => success(res, await service.processPaymentWebhook(req.get('x-razorpay-signature'), req.body)),
-    startAttempt: async (req, res) => success(res, { attempt: await service.startAttempt(req.user.id, req.validatedBody.examId, req.validatedBody.acceptedInstructions) }),
+    startAttempt: async (req, res) => success(res, { attempt: await service.startAttempt(req.user.id, req.validatedBody.examId, req.validatedBody.acceptedInstructions, Boolean(req.validatedBody?.retake || req.body?.retake)) }),
     saveAttempt: async (req, res) => success(res, { saved: true, attempt: await service.saveAttempt(req.user.id, req.validatedBody) }),
     submitAttempt: async (req, res) => success(res, { attempt: await service.submitAttempt(req.user.id, req.validatedBody) }),
+    terminateAttempt: async (req, res) => success(res, { attempt: await service.terminateAttempt(req.user.id, req.validatedBody) }),
     papers: async (_req, res) => success(res, { papers: await service.listPapers() }),
     createPaper: async (req, res) => success(res, { paper: await service.createPaper(req.user.id, req.validatedBody) }, 201),
     questionBanks: async (req, res) => success(res, { banks: await service.listQuestionBanks(req.user) }),
@@ -83,8 +88,32 @@ export function createPlatformController({ service, emailService, env }) {
     landingContent: async (_req, res) => success(res, { content: await service.getLandingContent() }),
     updateLandingContent: async (req, res) => success(res, await service.updateLandingContent(req.user.id, req.params.key, req.validatedBody)),
     overview: async (_req, res) => success(res, await service.adminOverview()),
-    adminFinanceOverview: async (_req, res) => success(res, await service.getAdminFinanceOverview()),
-    adminWallets: async (req, res) => success(res, { wallets: await service.listStudentWallets({ search: req.query.search, status: req.query.status }) }),
+    adminFinanceOverview: async (req, res) => success(res, await service.getAdminFinanceOverview(req.query)),
+    adminMasterWallet: async (_req, res) => success(res, await service.getMasterWalletOverview()),
+    adminMasterWalletTransactions: async (req, res) => success(res, await service.listPlatformTransactions(req.query)),
+    adminExportMasterWalletCsv: async (req, res) => {
+      const csv = await service.exportMasterWalletCsv(req.query);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="meritx-master-wallet-ledger.csv"');
+      return res.send(csv);
+    },
+    adminMasterWithdraw: async (req, res) => success(res, await service.requestAdminMasterWithdrawal(req.user.id, req.validatedBody), 201),
+    adminPlatformPayouts: async (req, res) => success(res, { payouts: await service.listPlatformPayouts(req.query) }),
+    adminReviewPlatformPayout: async (req, res) => success(res, { payout: await service.reviewPlatformPayout(req.user.id, { id: req.params.id, ...req.validatedBody }) }),
+    adminTeacherWallets: async (req, res) => success(res, { teachers: await service.listTeacherWallets(req.query) }),
+    adminRefunds: async (req, res) => success(res, { refunds: await service.listRefunds(req.query) }),
+    adminPlatformPayments: async (req, res) => success(res, await service.listPlatformPayments(req.query)),
+    proctoringInit: async (req, res) => success(res, { session: await service.initProctoringSession(req.user.id, req.validatedBody) }, 201),
+    proctoringHeartbeat: async (req, res) => success(res, await service.recordProctoringHeartbeat(req.user.id, req.validatedBody)),
+    proctoringWarning: async (req, res) => success(res, await service.recordProctoringWarning(req.user.id, req.validatedBody), 201),
+    proctoringEvent: async (req, res) => success(res, await service.recordProctoringEvent(req.user.id, req.validatedBody), 201),
+    adminProctoringOverview: async (_req, res) => success(res, await service.getProctoringOverview()),
+    adminProctoringCandidates: async (req, res) => success(res, { candidates: await service.listProctoringCandidates(req.query) }),
+    adminProctoringTimeline: async (req, res) => success(res, await service.getProctoringAttemptTimeline(req.params.attemptId)),
+    adminWallets: async (req, res) => {
+      const list = await service.listStudentWallets({ search: req.query.search, status: req.query.status });
+      return success(res, { wallets: list, students: list });
+    },
     adminStudentWalletDetails: async (req, res) => success(res, await service.getStudentWalletDetails(req.params.studentId)),
     adminWithdrawals: async (req, res) => success(res, { withdrawals: await service.listAdminWithdrawals({ status: req.query.status }) }),
     reviewWithdrawal: async (req, res) => success(res, { withdrawal: await service.reviewWithdrawal(req.user.id, { id: req.params.id || req.validatedBody.id, ...req.validatedBody }) }),
