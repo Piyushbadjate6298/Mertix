@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -21,6 +21,13 @@ import {
   Eye,
   ShieldAlert,
   RotateCcw,
+  Mic,
+  MicOff,
+  Volume2,
+  Layers,
+  FileText,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
@@ -31,7 +38,9 @@ import { ProctoringEngine } from "../../lib/proctoringEngine";
 import "./Exam.css";
 
 const format = (s) =>
-  `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(
+    Math.floor((s % 3600) / 60)
+  ).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
 export default function Exam() {
   const { id } = useParams();
@@ -52,41 +61,51 @@ export default function Exam() {
   const [saving, setSaving] = useState("Saved");
   const [tabSwitches, setTabSwitches] = useState(0);
 
-  // Pre-examination Verification State
-  const [preflightStatus, setPreflightStatus] = useState({
-    cameraHardware: false,
-    cameraPermission: false,
-    videoPreview: false,
-    faceVisible: false,
-    internetStable: false,
-    browserCompatible: false,
-    fullscreenAvailable: false,
-    instructionsAcknowledged: false,
-    consentGiven: false,
-  });
-  const [preflightRunning, setPreflightRunning] = useState(false);
-  const [preflightError, setPreflightError] = useState("");
-  const [previewStream, setPreviewStream] = useState(null);
+  // -------------------------------------------------------------
+  // FEATURE 1: PRE-EXAM PERMISSION & VERIFICATION STATE
+  // -------------------------------------------------------------
+  const [cameraStatus, setCameraStatus] = useState("pending"); // "pending" | "active" | "denied"
+  const [cameraStream, setCameraStream] = useState(null);
+  const [cameraError, setCameraError] = useState("");
+  const [isEnablingCamera, setIsEnablingCamera] = useState(false);
 
-  // Live Proctoring State
+  const [micStatus, setMicStatus] = useState("pending"); // "pending" | "active" | "denied"
+  const [micStream, setMicStream] = useState(null);
+  const [micLevel, setMicLevel] = useState(0);
+  const [micError, setMicError] = useState("");
+  const [isEnablingMic, setIsEnablingMic] = useState(false);
+
+  const [rulesAcknowledged, setRulesAcknowledged] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  // -------------------------------------------------------------
+  // FEATURE 2: PROCTORING WARNINGS & 3-SECOND COUNTDOWN STATE
+  // -------------------------------------------------------------
   const [proctoringActive, setProctoringActive] = useState(false);
   const [warningCount, setWarningCount] = useState(0);
   const [activeWarning, setActiveWarning] = useState(null);
   const [isFlagged, setIsFlagged] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
+  const [countdownData, setCountdownData] = useState(null);
   const [terminationData, setTerminationData] = useState({
     reason: "Maximum violation limit reached",
     terminatedAt: null,
     violationHistory: [],
     warningCount: 3,
   });
-  const [starting, setStarting] = useState(false);
+
+  // -------------------------------------------------------------
+  // FEATURE 4 & 5: LIVE PROCTORING HUD STATS
+  // -------------------------------------------------------------
   const [proctoringStats, setProctoringStats] = useState({
     cameraStatus: "Connected",
     aiStatus: "Initializing...",
     faceStatus: "Checking camera feed...",
     faceStatusCode: "normal",
     faceCount: 1,
+    micStatus: "Connected",
+    audioMonitoringStatus: "Active (Silence)",
+    audioLevel: 0,
     lastCheckTime: null,
     monitoringInterval: "3 Seconds",
     violationCount: 0,
@@ -96,14 +115,30 @@ export default function Exam() {
   const preflightVideoRef = useRef(null);
   const liveVideoRef = useRef(null);
   const proctoringEngineRef = useRef(null);
-  const previewStreamRef = useRef(null);
-  previewStreamRef.current = previewStream;
+  const cameraStreamRef = useRef(null);
+  cameraStreamRef.current = cameraStream;
+  const micStreamRef = useRef(null);
+  micStreamRef.current = micStream;
+  const audioMeterCleanupRef = useRef(null);
+
   const dataRef = useRef({ answers, marked });
   dataRef.current = { answers, marked };
   const submittedRef = useRef(false);
   const currentAttempt = useRef(null);
 
-  // Load exam and question metadata, plus check for existing attempt
+  // Dynamic Sections derived from loaded questions
+  const sections = useMemo(() => {
+    const map = {};
+    questions.forEach((q) => {
+      const subj = q.subject || "General";
+      map[subj] = (map[subj] || 0) + 1;
+    });
+    return Object.entries(map).map(([name, count]) => ({ name, count }));
+  }, [questions]);
+
+  const currentSection = questions[idx]?.subject || (sections[0]?.name ?? "General");
+
+  // Load examination metadata, questions, and existing attempt check
   useEffect(() => {
     if (!token) return;
     Promise.all([
@@ -123,7 +158,9 @@ export default function Exam() {
               currentAttempt.current = myAttempt;
               setIsTerminated(true);
               setTerminationData({
-                reason: myAttempt.terminationReason || "Maximum violation limit reached",
+                reason:
+                  myAttempt.terminationReason ||
+                  "Maximum violation limit reached",
                 terminatedAt: myAttempt.terminatedAt,
                 violationHistory: myAttempt.violationHistory || [],
                 warningCount: myAttempt.warningCount || 3,
@@ -138,7 +175,10 @@ export default function Exam() {
               setSeconds(
                 Math.max(
                   0,
-                  Math.floor((new Date(myAttempt.deadlineAt).getTime() - Date.now()) / 1000)
+                  Math.floor(
+                    (new Date(myAttempt.deadlineAt).getTime() - Date.now()) /
+                      1000
+                  )
                 )
               );
             } else if (myAttempt.status === "submitted" && myAttempt.result) {
@@ -150,77 +190,102 @@ export default function Exam() {
       .catch((e) => setError(e.message));
   }, [id, token]);
 
-  // Run initial preflight device verification
-  const runVerification = useCallback(async () => {
-    setPreflightRunning(true);
-    setPreflightError("");
+  // Handle explicit Camera Permission button click
+  const handleEnableCamera = async () => {
+    setIsEnablingCamera(true);
+    setCameraError("");
     try {
-      const res = await ProctoringEngine.runPreflightChecks(preflightVideoRef.current);
-      if (res.stream) {
-        setPreviewStream(res.stream);
-        previewStreamRef.current = res.stream;
-      }
-      setPreflightStatus((prev) => ({
-        ...prev,
-        cameraHardware: res.cameraHardware,
-        cameraPermission: res.cameraPermission,
-        videoPreview: res.videoPreview,
-        faceVisible: res.faceVisible,
-        internetStable: res.internetStable,
-        browserCompatible: res.browserCompatible,
-        fullscreenAvailable: res.fullscreenAvailable,
-      }));
-      if (res.errorMessage) {
-        setPreflightError(res.errorMessage);
+      const stream = await ProctoringEngine.requestCameraStream();
+      setCameraStream(stream);
+      cameraStreamRef.current = stream;
+      setCameraStatus("active");
+
+      if (preflightVideoRef.current) {
+        preflightVideoRef.current.srcObject = stream;
+        preflightVideoRef.current.muted = true;
+        await preflightVideoRef.current.play().catch(() => {});
       }
     } catch (err) {
-      setPreflightError(err.message || "Camera verification failed");
+      console.warn("Camera access error:", err);
+      setCameraStatus("denied");
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setCameraError(
+          "Camera access permission was denied. Please allow camera permissions in your browser address bar."
+        );
+      } else if (
+        err.name === "NotFoundError" ||
+        err.name === "DevicesNotFoundError"
+      ) {
+        setCameraError(
+          "No webcam hardware detected. Please plug in or enable a camera to proceed."
+        );
+      } else if (
+        err.name === "NotReadableError" ||
+        err.name === "TrackStartError"
+      ) {
+        setCameraError(
+          "Webcam is currently in use by another application. Please close other camera tabs and retry."
+        );
+      } else {
+        setCameraError(err.message || "Failed to initialize webcam.");
+      }
     } finally {
-      setPreflightRunning(false);
+      setIsEnablingCamera(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    if (!attempt && !result && exam) {
-      runVerification();
-    }
-  }, [attempt, result, exam, runVerification]);
+  // Handle explicit Microphone Permission button click
+  const handleEnableMicrophone = async () => {
+    setIsEnablingMic(true);
+    setMicError("");
+    try {
+      const stream = await ProctoringEngine.requestMicrophoneStream();
+      setMicStream(stream);
+      micStreamRef.current = stream;
+      setMicStatus("active");
 
-  // Keep camera preview alive on element when previewStream is available
-  useEffect(() => {
-    if (previewStream && preflightVideoRef.current) {
-      if (preflightVideoRef.current.srcObject !== previewStream) {
-        preflightVideoRef.current.srcObject = previewStream;
-        preflightVideoRef.current.muted = true;
-        preflightVideoRef.current.play().catch(() => {});
+      if (audioMeterCleanupRef.current) {
+        audioMeterCleanupRef.current();
       }
-    }
-  }, [previewStream]);
-
-  // Continual face alignment check while on preflight preview
-  useEffect(() => {
-    if (!previewStream || attempt || result || preflightStatus.faceVisible) return;
-    const interval = setInterval(async () => {
-      if (preflightVideoRef.current && preflightVideoRef.current.readyState >= 2) {
-        try {
-          const res = await ProctoringEngine.detectFaceInVideo(preflightVideoRef.current);
-          if (res.faceCount >= 1 || res.status === "normal" || res.status === "fallback_ok") {
-            setPreflightStatus((prev) => ({ ...prev, faceVisible: true }));
-          }
-        } catch {
-          // Keep polling softly
-        }
+      audioMeterCleanupRef.current = ProctoringEngine.createAudioMeter(
+        stream,
+        (level) => setMicLevel(level)
+      );
+    } catch (err) {
+      console.warn("Microphone access error:", err);
+      setMicStatus("denied");
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setMicError(
+          "Microphone access permission was denied. Please allow microphone permissions in your browser address bar."
+        );
+      } else if (
+        err.name === "NotFoundError" ||
+        err.name === "DevicesNotFoundError"
+      ) {
+        setMicError(
+          "No microphone hardware detected. Please connect a microphone to proceed."
+        );
+      } else {
+        setMicError(err.message || "Failed to initialize microphone.");
       }
-    }, 1200);
-    return () => clearInterval(interval);
-  }, [previewStream, attempt, result, preflightStatus.faceVisible]);
+    } finally {
+      setIsEnablingMic(false);
+    }
+  };
 
-  // Cleanup preview stream only if exam is never started (page navigated away)
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (!currentAttempt.current && previewStreamRef.current) {
-        previewStreamRef.current.getTracks().forEach((track) => track.stop());
-        previewStreamRef.current = null;
+      if (audioMeterCleanupRef.current) {
+        audioMeterCleanupRef.current();
+      }
+      if (!currentAttempt.current) {
+        if (cameraStreamRef.current) {
+          cameraStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
+        if (micStreamRef.current) {
+          micStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
       }
       if (proctoringEngineRef.current) {
         proctoringEngineRef.current.destroy();
@@ -261,96 +326,124 @@ export default function Exam() {
     );
   };
 
-  // Verify all 9 conditions before enabling Start Exam
-  const allChecksPassed =
-    preflightStatus.cameraHardware &&
-    preflightStatus.cameraPermission &&
-    preflightStatus.videoPreview &&
-    preflightStatus.faceVisible &&
-    preflightStatus.internetStable &&
-    preflightStatus.browserCompatible &&
-    preflightStatus.fullscreenAvailable &&
-    preflightStatus.instructionsAcknowledged &&
-    preflightStatus.consentGiven;
+  // Pre-start verification validation condition
+  const canStartExam =
+    cameraStatus === "active" &&
+    cameraStream !== null &&
+    micStatus === "active" &&
+    micStream !== null &&
+    rulesAcknowledged === true;
 
-  // Helper to proactively evaluate score client-side if server evaluation is in-flight or delayed
-  const computeClientEvaluation = useCallback((questionList, submittedAnswers, examConfig) => {
-    if (!questionList || !questionList.length) return null;
-    let correct = 0;
-    let incorrect = 0;
-    let unattempted = 0;
-    let score = 0;
-    const details = [];
+  // Compute evaluation score
+  const computeClientEvaluation = useCallback(
+    (questionList, submittedAnswers, examConfig) => {
+      if (!questionList || !questionList.length) return null;
+      let correct = 0;
+      let incorrect = 0;
+      let unattempted = 0;
+      let score = 0;
+      const details = [];
 
-    const marking = examConfig?.rules?.single_correct || { correct: 4, incorrect: -1, unanswered: 0 };
-    const posMark = Number(marking.correct ?? 4);
-    const negMark = Math.abs(Number(marking.incorrect ?? -1));
+      const marking =
+        examConfig?.rules?.single_correct || {
+          correct: 4,
+          incorrect: -1,
+          unanswered: 0,
+        };
+      const posMark = Number(marking.correct ?? 4);
+      const negMark = Math.abs(Number(marking.incorrect ?? -1));
 
-    questionList.forEach((item) => {
-      const ans = submittedAnswers[item.id];
-      const isAnswered = ans !== undefined && ans !== null && ans !== "";
-      let isCorrect = false;
+      questionList.forEach((item) => {
+        const ans = submittedAnswers[item.id];
+        const isAnswered = ans !== undefined && ans !== null && ans !== "";
+        let isCorrect = false;
 
-      if (isAnswered) {
-        if (item.questionType === "multiple_correct") {
-          const correctSet = new Set(Array.isArray(item.correctOptions) ? item.correctOptions : [item.answer]);
-          const userSet = new Set(Array.isArray(ans) ? ans : [ans]);
-          isCorrect = correctSet.size === userSet.size && [...correctSet].every((val) => userSet.has(val));
+        if (isAnswered) {
+          if (item.questionType === "multiple_correct") {
+            const correctSet = new Set(
+              Array.isArray(item.correctOptions)
+                ? item.correctOptions
+                : [item.answer]
+            );
+            const userSet = new Set(Array.isArray(ans) ? ans : [ans]);
+            isCorrect =
+              correctSet.size === userSet.size &&
+              [...correctSet].every((val) => userSet.has(val));
+          } else {
+            const userVal = Number.isInteger(ans) ? ans : Number(ans);
+            const correctVal = Number.isInteger(item.answer)
+              ? item.answer
+              : Number(item.correctOption);
+            isCorrect = userVal === correctVal;
+          }
+
+          if (isCorrect) {
+            correct++;
+            score += posMark;
+          } else {
+            incorrect++;
+            score -= negMark;
+          }
         } else {
-          const userVal = Number.isInteger(ans) ? ans : Number(ans);
-          const correctVal = Number.isInteger(item.answer) ? item.answer : Number(item.correctOption);
-          isCorrect = userVal === correctVal;
+          unattempted++;
         }
 
-        if (isCorrect) {
-          correct++;
-          score += posMark;
-        } else {
-          incorrect++;
-          score -= negMark;
-        }
-      } else {
-        unattempted++;
-      }
-
-      details.push({
-        id: item.id,
-        attempted: isAnswered,
-        selectedValue: isAnswered ? (Number.isInteger(ans) ? String.fromCharCode(65 + ans) : String(ans)) : null,
-        correctValue: Number.isInteger(item.answer) ? String.fromCharCode(65 + item.answer) : (Number.isInteger(item.correctOption) ? String.fromCharCode(65 + item.correctOption) : String(item.answer || item.correctOption || "A")),
-        selectedOptions: Array.isArray(ans) ? ans : (isAnswered ? [ans] : []),
-        correctOptions: Array.isArray(item.correctOptions) ? item.correctOptions : [item.answer ?? item.correctOption ?? 0],
-        isCorrect,
-        explanation: item.explanation || "Official answer key verified by examination board.",
+        details.push({
+          id: item.id,
+          attempted: isAnswered,
+          selectedValue: isAnswered
+            ? Number.isInteger(ans)
+              ? String.fromCharCode(65 + ans)
+              : String(ans)
+            : null,
+          correctValue: Number.isInteger(item.answer)
+            ? String.fromCharCode(65 + item.answer)
+            : Number.isInteger(item.correctOption)
+            ? String.fromCharCode(65 + item.correctOption)
+            : String(item.answer || item.correctOption || "A"),
+          selectedOptions: Array.isArray(ans)
+            ? ans
+            : isAnswered
+            ? [ans]
+            : [],
+          correctOptions: Array.isArray(item.correctOptions)
+            ? item.correctOptions
+            : [item.answer ?? item.correctOption ?? 0],
+          isCorrect,
+          explanation:
+            item.explanation ||
+            "Official answer key verified by examination board.",
+        });
       });
-    });
 
-    const attemptedCount = correct + incorrect;
-    const maximumMarks = questionList.length * posMark;
-    const accuracy = attemptedCount > 0 ? Math.round((correct / attemptedCount) * 100) : 0;
+      const attemptedCount = correct + incorrect;
+      const maximumMarks = questionList.length * posMark;
+      const accuracy =
+        attemptedCount > 0 ? Math.round((correct / attemptedCount) * 100) : 0;
 
-    return {
-      score,
-      maximumMarks,
-      attempted: attemptedCount,
-      correct,
-      incorrect,
-      unattempted,
-      unanswered: unattempted,
-      accuracy,
-      details,
-    };
-  }, []);
+      return {
+        score,
+        maximumMarks,
+        attempted: attemptedCount,
+        correct,
+        incorrect,
+        unattempted,
+        unanswered: unattempted,
+        accuracy,
+        details,
+      };
+    },
+    []
+  );
 
-  // Handle Automatic Exam Termination upon 3 Proctoring Violations
+  // Automatic Exam Termination on 3 Proctoring Violations
   const handleAutomaticTermination = useCallback(
     async (termInfo) => {
-      // 1. Immediately stop timer and freeze interface
       setIsTerminated(true);
       setSeconds(0);
       setActiveWarning(null);
+      setCountdownData(null);
 
-      // 2. Cleanly stop proctoring engine & camera
       if (proctoringEngineRef.current) {
         proctoringEngineRef.current.destroy();
         proctoringEngineRef.current = null;
@@ -361,9 +454,11 @@ export default function Exam() {
         document.exitFullscreen().catch(() => {});
       }
 
-      const curAnswers = termInfo?.answers || dataRef.current.answers || answers || {};
+      const curAnswers =
+        termInfo?.answers || dataRef.current.answers || answers || {};
       const history = termInfo?.violationHistory || [];
-      const targetAttemptId = currentAttempt.current?.id || attempt?.id || termInfo?.attemptId;
+      const targetAttemptId =
+        currentAttempt.current?.id || attempt?.id || termInfo?.attemptId;
 
       setTerminationData({
         reason: "Maximum violation limit reached",
@@ -372,8 +467,12 @@ export default function Exam() {
         warningCount: 3,
       });
 
-      // Immediate proactive calculation so user never sees a blank or indefinitely loading screen
-      const clientEval = computeClientEvaluation(questions, curAnswers, exam?.configuration);
+      // Immediate calculation so user never gets stuck loading
+      const clientEval = computeClientEvaluation(
+        questions,
+        curAnswers,
+        exam?.configuration
+      );
       if (clientEval) {
         setResult({
           result: clientEval,
@@ -382,7 +481,7 @@ export default function Exam() {
         });
       }
 
-      // 3. Sync termination to backend and retrieve authoritative evaluated result
+      // Sync termination to backend
       if (targetAttemptId && token) {
         try {
           const res = await api("/proctoring/warning", {
@@ -391,7 +490,8 @@ export default function Exam() {
             body: {
               attemptId: targetAttemptId,
               category: "exam_rule_violation",
-              message: "Warning 3/3 (MAXIMUM VIOLATIONS REACHED): Exam automatically terminated.",
+              message:
+                "Warning 3/3 (MAXIMUM VIOLATIONS REACHED): Exam automatically terminated.",
               evidenceMetadata: { code: "auto_terminate", finalViolation: true },
               currentAnswers: curAnswers,
             },
@@ -420,7 +520,7 @@ export default function Exam() {
             }));
           }
         } catch (err) {
-          console.error("Proctoring warning sync error during termination:", err);
+          console.error("Warning termination error, calling fallback:", err);
           try {
             const tRes = await api("/attempts/terminate", {
               method: "POST",
@@ -445,20 +545,19 @@ export default function Exam() {
     [token, questions, exam, attempt, answers, computeClientEvaluation]
   );
 
-  // Start Examination with Live Proctoring
+  // Start Examination function triggered ONLY by candidate click on START EXAMINATION button
   async function startExam(isRetake = false) {
     const retake = isRetake === true;
 
-    // 1. Mandatory Pre-check Validation
-    if (!retake && !allChecksPassed) {
-      if (!preflightStatus.instructionsAcknowledged || !preflightStatus.consentGiven) {
+    if (!retake && !canStartExam) {
+      if (cameraStatus !== "active") {
+        setError("Please enable and verify your camera before starting.");
+      } else if (micStatus !== "active") {
+        setError("Please enable and verify your microphone before starting.");
+      } else if (!rulesAcknowledged) {
         setError(
-          "Please accept the Examination Guidelines (Item 8) and AI Live Proctoring Consent (Item 9) to continue."
+          "Please read and acknowledge the examination rules and proctoring consent to continue."
         );
-      } else if (!preflightStatus.cameraHardware || !preflightStatus.cameraPermission) {
-        setError("Camera permission is required. Please enable your webcam in the browser address bar.");
-      } else {
-        setError("Please complete all mandatory pre-examination verification checks before entering.");
       }
       return;
     }
@@ -468,67 +567,15 @@ export default function Exam() {
     setError("");
 
     try {
-      // 2. Immediately initiate Fullscreen request within the user's click interaction
-      // (Preserves browser transient activation!)
-      const fullscreenOk = await enterFullscreen();
-      const fsSupported = !!(
-        document.fullscreenEnabled ||
-        document.webkitFullscreenEnabled ||
-        document.mozFullScreenEnabled ||
-        document.msFullscreenEnabled
-      );
+      // 1. Request fullscreen on user click
+      await enterFullscreen();
 
-      if (fsSupported && !fullscreenOk) {
-        throw new Error(
-          "Fullscreen mode is mandatory for live proctored examinations. Please allow fullscreen in your browser to proceed."
-        );
-      }
-
-      // 3. Verify or acquire active camera stream
-      let streamToUse = previewStreamRef.current;
-      const isStreamActive = (s) =>
-        s && s.active && s.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
-
-      if (!isStreamActive(streamToUse)) {
-        try {
-          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            throw new Error(
-              "Your browser does not support webcam access. Please use Chrome, Edge, Firefox, or Safari."
-            );
-          }
-          streamToUse = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 640 },
-              height: { ideal: 480 },
-              facingMode: "user",
-            },
-            audio: false,
-          });
-          setPreviewStream(streamToUse);
-          previewStreamRef.current = streamToUse;
-        } catch (camErr) {
-          if (camErr.name === "NotAllowedError" || camErr.name === "PermissionDeniedError") {
-            throw new Error(
-              "Camera access permission was denied. Please allow camera permissions in your browser address bar and try again."
-            );
-          } else if (camErr.name === "NotFoundError" || camErr.name === "DevicesNotFoundError") {
-            throw new Error("No webcam camera detected. Please connect or enable your camera to proceed.");
-          } else if (camErr.name === "NotReadableError" || camErr.name === "TrackStartError") {
-            throw new Error(
-              "Webcam is currently in use by another application. Please close other camera apps and retry."
-            );
-          } else {
-            throw new Error(camErr.message || "Failed to initialize webcam for proctoring.");
-          }
-        }
-      }
-
-      // 4. Validate authentication
+      // 2. Validate authentication
       if (!token) {
-        throw new Error("Your login session has expired. Please log in again to begin the examination.");
+        throw new Error("Your login session has expired. Please log in again.");
       }
 
-      // 5. Backend Start Attempt API (with auto-registration retry fallback)
+      // 3. Start attempt on backend
       let data;
       try {
         data = await api("/attempts/start", {
@@ -565,7 +612,9 @@ export default function Exam() {
       }
 
       if (!data?.attempt?.id) {
-        throw new Error("Failed to initialize authorized exam session. Please try again.");
+        throw new Error(
+          "Failed to initialize authorized exam session. Please try again."
+        );
       }
 
       const next = data.attempt;
@@ -585,35 +634,16 @@ export default function Exam() {
         return;
       }
 
-      // 6. Confirm and initialize proctoring session on backend
-      try {
-        await api("/proctoring/session/init", {
-          method: "POST",
-          token,
-          body: {
-            attemptId: next.id,
-            examId: id,
-            browserData: {
-              userAgent: navigator.userAgent,
-              screenResolution: `${window.screen.width}x${window.screen.height}`,
-            },
-            verificationChecks: {
-              cameraAvailable: true,
-              permissionGranted: true,
-              faceDetected: true,
-              internetOk: navigator.onLine,
-              browserCompatible: true,
-              fullscreenAvailable: true,
-              instructionsAccepted: true,
-              consentGiven: true,
-            },
-          },
-        });
-      } catch (procErr) {
-        console.warn("Proctoring session initialization notice:", procErr);
-      }
+      // 4. Combine camera and microphone streams cleanly
+      const cam = cameraStreamRef.current;
+      const mic = micStreamRef.current;
 
-      // 7. Initialize Live Proctoring Engine
+      const combinedStream = new MediaStream([
+        ...(cam ? cam.getVideoTracks() : []),
+        ...(mic ? mic.getAudioTracks() : []),
+      ]);
+
+      // 5. Initialize Proctoring Engine
       if (proctoringEngineRef.current) {
         proctoringEngineRef.current.destroy();
         proctoringEngineRef.current = null;
@@ -632,7 +662,9 @@ export default function Exam() {
           }
           if (!warn.isTerminated) {
             setTimeout(() => {
-              setActiveWarning((cur) => (cur?.timestamp === warn.timestamp ? null : cur));
+              setActiveWarning((cur) =>
+                cur?.timestamp === warn.timestamp ? null : cur
+              );
             }, 6000);
           }
         },
@@ -643,7 +675,9 @@ export default function Exam() {
             setIsTerminated(true);
           }
           if (status.resolvedIncident) {
-            setActiveWarning((cur) => (cur?.code === status.resolvedIncident ? null : cur));
+            setActiveWarning((cur) =>
+              cur?.code === status.resolvedIncident ? null : cur
+            );
           }
         },
         onStatsUpdate: (stats) => {
@@ -651,6 +685,9 @@ export default function Exam() {
             ...prev,
             ...stats,
           }));
+        },
+        onCountdownTick: (tickInfo) => {
+          setCountdownData(tickInfo);
         },
         onTerminated: (termInfo) => {
           handleAutomaticTermination(termInfo);
@@ -660,12 +697,15 @@ export default function Exam() {
       proctoringEngineRef.current = engine;
       setProctoringActive(true);
 
-      // Start engine with live webcam stream
-      await engine.startMonitoring(null, streamToUse);
+      // Start engine with live video & audio streams
+      await engine.startMonitoring(null, combinedStream, mic);
 
-      // 8. Authoritative countdown timer & transition to live exam
+      // 6. Start examination timer & state
       const deadlineMs = new Date(next.deadlineAt).getTime();
-      const leftSeconds = Math.max(0, Math.floor((deadlineMs - Date.now()) / 1000));
+      const leftSeconds = Math.max(
+        0,
+        Math.floor((deadlineMs - Date.now()) / 1000)
+      );
 
       setResult(null);
       setAttempt(next);
@@ -674,94 +714,25 @@ export default function Exam() {
       setMarked(next.marked || []);
       setSeconds(leftSeconds);
     } catch (issue) {
-      console.error("Examination start error:", issue);
-      let userMsg = issue.message || "Failed to start examination. Please try again.";
-      if (
-        userMsg.toLowerCase().includes("failed to fetch") ||
-        userMsg.toLowerCase().includes("unable to reach")
-      ) {
-        userMsg = "Unable to connect to MeritX servers. Please check your internet connection and try again.";
-      }
-      setError(userMsg);
+      console.error("Exam start error:", issue);
+      setError(issue.message || "Failed to start examination. Please retry.");
     } finally {
       setStarting(false);
     }
   }
 
-  // Ensure proctoring webcam binds to live video element as soon as active exam HUD mounts
+  // Ensure proctoring webcam binds to live video element as soon as active exam mounts
   useEffect(() => {
     if (attempt && liveVideoRef.current && proctoringEngineRef.current) {
       proctoringEngineRef.current.attachVideoElement(liveVideoRef.current);
     }
   }, [attempt]);
 
-  // Auto-resume proctoring stream if candidate loaded an in-progress attempt directly
-  useEffect(() => {
-    if (attempt && !result && !isTerminated && attempt.status === "in_progress" && !proctoringEngineRef.current && token) {
-      let isCancelled = false;
-      const resumeProctoring = async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
-            audio: false,
-          });
-          if (isCancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          const engine = new ProctoringEngine({
-            token,
-            examId: id,
-            attemptId: attempt.id,
-            getAnswers: () => dataRef.current.answers,
-            onWarning: (warn) => {
-              setWarningCount(warn.warningCount);
-              setActiveWarning(warn);
-              if (warn.isFlagged) setIsFlagged(true);
-              if (!warn.isTerminated) {
-                setTimeout(() => {
-                  setActiveWarning((cur) => (cur?.timestamp === warn.timestamp ? null : cur));
-                }, 6000);
-              }
-            },
-            onStatusChange: (status) => {
-              setWarningCount(status.warningCount);
-              setIsFlagged(status.isFlagged);
-              if (status.isTerminated) setIsTerminated(true);
-              if (status.resolvedIncident) {
-                setActiveWarning((cur) => (cur?.code === status.resolvedIncident ? null : cur));
-              }
-            },
-            onStatsUpdate: (stats) => {
-              setProctoringStats((prev) => ({
-                ...prev,
-                ...stats,
-              }));
-            },
-            onTerminated: (termInfo) => {
-              handleAutomaticTermination(termInfo);
-            },
-          });
-          proctoringEngineRef.current = engine;
-          setProctoringActive(true);
-          await engine.startMonitoring(liveVideoRef.current, stream);
-        } catch (err) {
-          console.warn("Could not auto-resume proctoring webcam:", err);
-        }
-      };
-      resumeProctoring();
-      return () => {
-        isCancelled = true;
-      };
-    }
-  }, [attempt, result, isTerminated, token, id, handleAutomaticTermination]);
-
-  // Submit Exam and Cleanly Release Webcam
+  // Submit Exam handler
   const submit = useCallback(async () => {
     if (submittedRef.current || !currentAttempt.current) return;
     submittedRef.current = true;
 
-    // Cleanly release proctoring webcam immediately upon submission
     if (proctoringEngineRef.current) {
       proctoringEngineRef.current.destroy();
       proctoringEngineRef.current = null;
@@ -779,7 +750,6 @@ export default function Exam() {
       });
       setResult(d.attempt);
       setConfirm(false);
-      // Exit fullscreen if active
       if (document.fullscreenElement && document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
       }
@@ -791,7 +761,7 @@ export default function Exam() {
 
   // Timer countdown
   useEffect(() => {
-    if (!attempt || result) return;
+    if (!attempt || result || isTerminated) return;
     const t = setInterval(() => {
       const left = Math.max(
         0,
@@ -804,21 +774,21 @@ export default function Exam() {
       }
     }, 1000);
     return () => clearInterval(t);
-  }, [attempt, result, submit]);
+  }, [attempt, result, isTerminated, submit]);
 
   // Tab switch counter
   useEffect(() => {
-    if (!attempt || result) return;
+    if (!attempt || result || isTerminated) return;
     const onVisibility = () => {
       if (document.hidden) setTabSwitches((n) => n + 1);
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [attempt, result]);
+  }, [attempt, result, isTerminated]);
 
   // Auto-save answers
   useEffect(() => {
-    if (!attempt || result) return;
+    if (!attempt || result || isTerminated) return;
     const t = setTimeout(async () => {
       setSaving("Saving...");
       try {
@@ -833,37 +803,16 @@ export default function Exam() {
       }
     }, 650);
     return () => clearTimeout(t);
-  }, [answers, marked, attempt, result, token]);
+  }, [answers, marked, attempt, result, isTerminated, token]);
 
   // Record visited questions
   useEffect(() => {
-    if (questions.length)
+    if (questions.length && questions[idx]) {
       setVisited((p) =>
         p.includes(questions[idx].id) ? p : [...p, questions[idx].id]
       );
+    }
   }, [idx, questions]);
-
-  // Segment timed sections
-  useEffect(() => {
-    const segments = exam?.configuration?.segments || [];
-    if (!attempt || !segments.length || !questions.length) return;
-    const elapsed = Math.max(0, attempt.durationSeconds - seconds);
-    let boundary = 0;
-    let active = segments.at(-1);
-    for (const segment of segments) {
-      boundary += segment.durationMinutes * 60;
-      if (elapsed < boundary) {
-        active = segment;
-        break;
-      }
-    }
-    if (!active.subjects.includes(questions[idx]?.subject)) {
-      const first = questions.findIndex((item) =>
-        active.subjects.includes(item.subject)
-      );
-      if (first >= 0) setIdx(first);
-    }
-  }, [attempt, exam, seconds, questions, idx]);
 
   const answer = (option) =>
     setAnswers((current) => {
@@ -956,341 +905,425 @@ export default function Exam() {
     );
 
   // -------------------------------------------------------------
-  // PRE-EXAMINATION VERIFICATION SCREEN
+  // FEATURE 1: PRE-EXAMINATION INSTRUCTIONS & VERIFICATION SCREEN
   // -------------------------------------------------------------
-  if (!attempt) {
+  if (!attempt && !result && !isTerminated) {
     const config = exam.configuration || {};
-    const instructions = config.instructions || [
-      "Keep your webcam active throughout the exam; moving away or blocking the camera triggers warnings.",
-      "Ensure you are alone in a well-lit room. Multiple faces or secondary electronic devices trigger proctoring alerts.",
-      "Fullscreen mode is mandatory. Switching browser tabs, minimizing the window, or exiting fullscreen flags your paper.",
-      "You have a maximum allowance of 3 proctoring warnings before your session is permanently flagged for disciplinary action.",
-      "Responses are saved automatically. The exam auto-submits when the timer reaches 00:00:00.",
-    ];
+    const markingRules = config.rules?.single_correct || {
+      correct: 4,
+      incorrect: -1,
+      unanswered: 0,
+    };
+    const posMark = Number(markingRules.correct ?? 4);
+    const negMark = Math.abs(Number(markingRules.incorrect ?? -1));
+
+    const totalMarks =
+      exam.marks ||
+      exam.totalMarks ||
+      questions.length * posMark;
+
+    const examDateStr = exam.date
+      ? new Date(exam.date).toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : new Date().toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+
+    const startTimeStr = exam.time || "Immediate upon candidate launch";
+    const durationMins = exam.duration || exam.durationMinutes || 180;
+
+    const passingCriteria = config.passingPercentage
+      ? `${config.passingPercentage}% Minimum`
+      : config.passMarks
+      ? `${config.passMarks} Marks`
+      : "As per exam board cutoff criteria";
 
     return (
-      <div className="proctoring-verification-screen">
-        <div className="verification-container">
-          <div className="verification-header">
-            <Brand />
-            <div className="verification-header-meta">
+      <div className="pre-exam-screen">
+        <div className="pre-exam-container">
+          {/* Header */}
+          <div className="pre-exam-header">
+            <div className="pre-exam-header-left">
               <span className="secure-badge">
-                <ShieldCheck size={14} /> LIVE PROCTORED EXAMINATION ENVIRONMENT
+                <ShieldCheck size={14} /> Official Examination Portal
               </span>
               <h1>{exam.title}</h1>
-              <p className="verification-sub">
-                Pre-Examination Hardware & AI Verification · Complete all 9 mandatory checks to begin
+              <p>
+                Pre-Exam Verification & Proctoring Setup · All permissions must be granted to proceed
               </p>
+            </div>
+            <Brand />
+          </div>
+
+          {/* STEP 1: EXAMINATION DETAILS */}
+          <div className="pre-exam-section-block">
+            <div className="section-block-title">
+              <span className="section-step-pill">Step 1</span>
+              <span>Examination Details & Summary</span>
+            </div>
+            <div className="pre-exam-details-grid">
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Examination Name</span>
+                <span className="pre-exam-detail-value">{exam.title}</span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Course / Stream</span>
+                <span className="pre-exam-detail-value">
+                  {exam.type || exam.subject || "Standard Assessment"}
+                </span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Candidate Name</span>
+                <span className="pre-exam-detail-value highlight-blue">
+                  {user?.name || "Registered Candidate"}
+                </span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Exam Date</span>
+                <span className="pre-exam-detail-value">{examDateStr}</span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Exam Start Time</span>
+                <span className="pre-exam-detail-value">{startTimeStr}</span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Total Duration</span>
+                <span className="pre-exam-detail-value highlight-green">
+                  {durationMins} Minutes
+                </span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Total Sections</span>
+                <span className="pre-exam-detail-value">
+                  {sections.length} ({sections.map((s) => s.name).join(", ")})
+                </span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Questions per Section</span>
+                <span className="pre-exam-detail-value">
+                  {sections.map((s) => `${s.name}: ${s.count}`).join(" · ")}
+                </span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Total Questions</span>
+                <span className="pre-exam-detail-value">{questions.length} Questions</span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Total Marks</span>
+                <span className="pre-exam-detail-value">{totalMarks} Marks</span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Marking Scheme</span>
+                <span className="pre-exam-detail-value">
+                  +{posMark} Correct / -{negMark} Incorrect / 0 Unattempted
+                </span>
+              </div>
+              <div className="pre-exam-detail-item">
+                <span className="pre-exam-detail-label">Passing Standard</span>
+                <span className="pre-exam-detail-value">{passingCriteria}</span>
+              </div>
             </div>
           </div>
 
-          <div className="verification-grid">
-            {/* Left: 9-Point Verification Checklist */}
-            <div className="verification-checklist-card">
-              <h3>
-                <ShieldCheck size={18} color="#2563eb" /> Mandatory Pre-Exam Verification
-              </h3>
-              <p className="checklist-sub">
-                All checks must be verified green before examination authorization is granted.
-              </p>
-
-              <div className="checklist-items">
-                {/* 1. Camera Hardware */}
-                <div className={`check-item ${preflightStatus.cameraHardware ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.cameraHardware ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>1. Camera Hardware Availability</strong>
-                    <small>
-                      {preflightStatus.cameraHardware
-                        ? "Webcam hardware detected and ready."
-                        : "No webcam detected. Please connect a webcam."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 2. Camera Permission */}
-                <div className={`check-item ${preflightStatus.cameraPermission ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.cameraPermission ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>2. Camera Access Permission</strong>
-                    <small>
-                      {preflightStatus.cameraPermission
-                        ? "Browser webcam permissions granted."
-                        : "Camera permission denied. Allow camera in your browser address bar."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 3. Live Stream Preview */}
-                <div className={`check-item ${preflightStatus.videoPreview ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.videoPreview ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>3. Live Stream Preview Rendering</strong>
-                    <small>
-                      {preflightStatus.videoPreview
-                        ? "Real-time 640x480 video feed active."
-                        : "Waiting for video frame rendering..."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 4. AI Face Visibility */}
-                <div className={`check-item ${preflightStatus.faceVisible ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.faceVisible ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>4. AI Face Detection & Centering</strong>
-                    <small>
-                      {preflightStatus.faceVisible
-                        ? "Candidate face detected and centered in frame."
-                        : "Face not detected. Position yourself clearly in front of the lens."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 5. Internet Connection */}
-                <div className={`check-item ${preflightStatus.internetStable ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.internetStable ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>5. Stable Internet Connection</strong>
-                    <small>
-                      {preflightStatus.internetStable
-                        ? "Connected and synchronized with MeritX servers."
-                        : "Offline or unstable network connection detected."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 6. Browser Compatibility */}
-                <div className={`check-item ${preflightStatus.browserCompatible ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.browserCompatible ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>6. Browser WebRTC Compatibility</strong>
-                    <small>
-                      {preflightStatus.browserCompatible
-                        ? "HTML5 WebRTC, Canvas & Audio/Video APIs supported."
-                        : "Browser does not support modern WebRTC proctoring."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 7. Fullscreen Capability */}
-                <div className={`check-item ${preflightStatus.fullscreenAvailable ? "pass" : "fail"}`}>
-                  <span className="check-icon">
-                    {preflightStatus.fullscreenAvailable ? <Check size={14} /> : <X size={14} />}
-                  </span>
-                  <div className="check-text">
-                    <strong>7. Fullscreen Mode Capability</strong>
-                    <small>
-                      {preflightStatus.fullscreenAvailable
-                        ? "Hardware lock & fullscreen API available."
-                        : "Fullscreen mode is not supported or blocked."}
-                    </small>
-                  </div>
-                </div>
-
-                {/* 8. Instructions Consent Checkbox */}
-                <label className="check-item-clickable">
-                  <input
-                    type="checkbox"
-                    checked={preflightStatus.instructionsAcknowledged}
-                    onChange={(e) =>
-                      setPreflightStatus((p) => ({
-                        ...p,
-                        instructionsAcknowledged: e.target.checked,
-                      }))
-                    }
-                  />
-                  <div className="check-text">
-                    <strong>8. Examination Guidelines Acknowledged</strong>
-                    <small>
-                      I confirm I have read and agree to follow all examination rules.
-                    </small>
-                  </div>
-                </label>
-
-                {/* 9. Continuous Proctoring Consent Checkbox */}
-                <label className="check-item-clickable">
-                  <input
-                    type="checkbox"
-                    checked={preflightStatus.consentGiven}
-                    onChange={(e) =>
-                      setPreflightStatus((p) => ({
-                        ...p,
-                        consentGiven: e.target.checked,
-                      }))
-                    }
-                  />
-                  <div className="check-text">
-                    <strong>9. AI Live Proctoring & Surveillance Consent</strong>
-                    <small>
-                      I consent to continuous camera surveillance, automated 3-warning anomaly detection, and disciplinary flagging.
-                    </small>
-                  </div>
-                </label>
-              </div>
-
-              {preflightError && (
-                <div className="alert-preflight-error">
-                  <AlertCircle size={16} />
-                  <span>{preflightError}</span>
-                </div>
-              )}
+          {/* STEP 2: EXAMINATION RULES */}
+          <div className="pre-exam-section-block">
+            <div className="section-block-title">
+              <span className="section-step-pill">Step 2</span>
+              <span>Mandatory Examination Rules & Code of Conduct</span>
             </div>
+            <div className="rules-grid">
+              <div className="rule-card">
+                <span className="rule-num">1</span>
+                <span>The candidate must remain continuously visible within the camera frame.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">2</span>
+                <span>Only one candidate should appear in the camera view at any point.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">3</span>
+                <span>Both webcam camera and microphone must remain enabled throughout the exam.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">4</span>
+                <span>Switching browser tabs or minimizing the examination window triggers a violation.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">5</span>
+                <span>Exiting fullscreen mode triggers a proctoring violation.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">6</span>
+                <span>Background speech or suspicious ambient voice triggers a proctoring violation.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">7</span>
+                <span>Three valid violations will result in immediate automatic examination termination.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">8</span>
+                <span>A terminated examination cannot be restarted or resumed under any circumstance.</span>
+              </div>
+              <div className="rule-card">
+                <span className="rule-num">9</span>
+                <span>All answers must be submitted before the official examination timer expires.</span>
+              </div>
+            </div>
+          </div>
 
-            {/* Right: Live Camera Preview & Guidelines */}
-            <div className="verification-preview-card">
-              <div className="preview-video-wrapper">
-                <video
-                  ref={preflightVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="preview-video-element"
-                />
-                <div className="face-oval-guide">
-                  <div className="face-oval-border" />
-                  <span className="face-oval-text">
-                    {preflightStatus.faceVisible
-                      ? "✓ Face Aligned"
-                      : "Center Face Here"}
+          {/* STEP 3: CAMERA AND MICROPHONE PERMISSIONS */}
+          <div className="pre-exam-section-block">
+            <div className="section-block-title">
+              <span className="section-step-pill">Step 3</span>
+              <span>Camera and Microphone Permissions</span>
+            </div>
+            <div className="permissions-cards-grid">
+              {/* Card 1: Camera Permission */}
+              <div className={`permission-card ${cameraStatus}`}>
+                <div className="permission-card-head">
+                  <div className="permission-title-group">
+                    <div className="permission-icon-wrap">
+                      <Camera size={22} />
+                    </div>
+                    <div>
+                      <h4>Camera Permission</h4>
+                      <p>Required for live visual proctoring & face visibility</p>
+                    </div>
+                  </div>
+                  <span className={`perm-badge ${cameraStatus}`}>
+                    {cameraStatus === "active"
+                      ? "✓ Granted"
+                      : cameraStatus === "denied"
+                      ? "✕ Denied"
+                      : "Pending"}
                   </span>
                 </div>
 
-                <div className="preview-status-pill">
-                  {preflightStatus.faceVisible ? (
-                    <span className="pill-green">
-                      <span className="pulse-dot" /> AI FACE DETECTED
-                    </span>
+                <div className="permission-body-preview">
+                  {cameraStatus === "active" ? (
+                    <div className="camera-preview-box">
+                      <video
+                        ref={preflightVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="camera-preview-video"
+                      />
+                      <div className="face-oval-guide">
+                        <div className="face-oval-border" />
+                        <span className="face-oval-text">Center Face In Oval</span>
+                      </div>
+                    </div>
                   ) : (
-                    <span className="pill-amber">
-                      <AlertTriangle size={12} /> ALIGNING CANDIDATE...
-                    </span>
+                    <div className="camera-preview-placeholder">
+                      <Camera size={36} color="#94a3b8" />
+                      <span>Click 'Enable Camera' to preview video feed</span>
+                    </div>
                   )}
                 </div>
-              </div>
 
-              <div className="preview-controls">
+                {cameraError && (
+                  <div className="alert-preflight-error" style={{ marginBottom: 12 }}>
+                    <AlertCircle size={15} />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
-                  className="btn btn-outline small"
-                  onClick={runVerification}
-                  disabled={preflightRunning}
+                  className={`btn ${cameraStatus === "active" ? "btn-outline" : "btn-primary"} small`}
+                  onClick={handleEnableCamera}
+                  disabled={isEnablingCamera}
                 >
-                  <RefreshCw
-                    size={14}
-                    className={preflightRunning ? "spin" : ""}
-                  />{" "}
-                  {preflightRunning ? "Testing Hardware..." : "Re-test Camera"}
+                  <Camera size={15} />
+                  {isEnablingCamera
+                    ? "Requesting Access..."
+                    : cameraStatus === "active"
+                    ? "Camera Active · Re-test"
+                    : "Enable Camera"}
                 </button>
-                <span className="video-res-note">
-                  640 × 480 @ 30fps · Hardware Direct
-                </span>
               </div>
 
-              <div className="verification-rules-box">
-                <h4>
-                  <ShieldAlert size={15} color="#e11d48" /> 3-Level Warning Enforcement
-                </h4>
-                <ul>
-                  {instructions.map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
+              {/* Card 2: Microphone Permission */}
+              <div className={`permission-card ${micStatus}`}>
+                <div className="permission-card-head">
+                  <div className="permission-title-group">
+                    <div className="permission-icon-wrap">
+                      <Mic size={22} />
+                    </div>
+                    <div>
+                      <h4>Microphone Permission</h4>
+                      <p>Required for speech and background sound monitoring</p>
+                    </div>
+                  </div>
+                  <span className={`perm-badge ${micStatus}`}>
+                    {micStatus === "active"
+                      ? "✓ Granted"
+                      : micStatus === "denied"
+                      ? "✕ Denied"
+                      : "Pending"}
+                  </span>
+                </div>
+
+                <div className="permission-body-preview">
+                  {micStatus === "active" ? (
+                    <div className="audio-meter-panel">
+                      <div className="audio-meter-status-row">
+                        <span style={{ fontWeight: 700, color: "#334155" }}>
+                          Live Audio Activity:
+                        </span>
+                        <span
+                          className={`audio-detected-chip ${
+                            micLevel > 15 ? "speaking" : "silence"
+                          }`}
+                        >
+                          <Volume2 size={13} />
+                          {micLevel > 15 ? "Voice / Sound Detected" : "Ambient Silence"}
+                        </span>
+                      </div>
+
+                      {/* Dynamic Equalizer Visualizer Bars */}
+                      <div className="audio-bars-container">
+                        {[12, 28, 45, 60, 80, 65, 50, 35, 20, 15].map((scale, i) => {
+                          const height = Math.min(
+                            100,
+                            Math.max(8, (micLevel * scale) / 35)
+                          );
+                          const isHot = height > 55;
+                          const isLoud = height > 85;
+                          return (
+                            <div
+                              key={i}
+                              className={`audio-bar-stick ${
+                                isLoud ? "loud" : isHot ? "hot" : ""
+                              }`}
+                              style={{ height: `${height}%` }}
+                            />
+                          );
+                        })}
+                      </div>
+
+                      <div className="audio-meter-status-row">
+                        <small style={{ color: "#64748b" }}>
+                          Real-time volume response level:
+                        </small>
+                        <strong style={{ color: micLevel > 40 ? "#ea580c" : "#10b981" }}>
+                          {micLevel}%
+                        </strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="camera-preview-placeholder">
+                      <Mic size={36} color="#94a3b8" />
+                      <span>Click 'Enable Microphone' to activate audio monitor</span>
+                    </div>
+                  )}
+                </div>
+
+                {micError && (
+                  <div className="alert-preflight-error" style={{ marginBottom: 12 }}>
+                    <AlertCircle size={15} />
+                    <span>{micError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className={`btn ${micStatus === "active" ? "btn-outline" : "btn-primary"} small`}
+                  onClick={handleEnableMicrophone}
+                  disabled={isEnablingMic}
+                >
+                  <Mic size={15} />
+                  {isEnablingMic
+                    ? "Requesting Access..."
+                    : micStatus === "active"
+                    ? "Microphone Active · Re-test"
+                    : "Enable Microphone"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* STEP 4: PRE-START VALIDATION & START EXAMINATION */}
+          <div className="pre-exam-section-block" style={{ marginBottom: 0 }}>
+            <div className="section-block-title">
+              <span className="section-step-pill">Step 4</span>
+              <span>Pre-Start Validation & Examination Launch</span>
+            </div>
+            <div className="pre-start-card">
+              <div className="pre-start-items">
+                <div className={`pre-check-pill ${cameraStatus === "active" ? "ok" : "missing"}`}>
+                  {cameraStatus === "active" ? <Check size={16} /> : <X size={16} />}
+                  <span>Camera Enabled & Live</span>
+                </div>
+                <div className={`pre-check-pill ${micStatus === "active" ? "ok" : "missing"}`}>
+                  {micStatus === "active" ? <Check size={16} /> : <X size={16} />}
+                  <span>Microphone Enabled & Monitoring</span>
+                </div>
+                <div className="pre-check-pill ok">
+                  <Check size={16} />
+                  <span>Fullscreen Lock Supported</span>
+                </div>
+                <div className={`pre-check-pill ${rulesAcknowledged ? "ok" : "missing"}`}>
+                  {rulesAcknowledged ? <Check size={16} /> : <X size={16} />}
+                  <span>Rules & Policy Confirmed</span>
+                </div>
               </div>
 
-              <div className="verification-start-actions">
-                <Link className="btn btn-outline" to={`/exams/${id}`}>
-                  <ArrowLeft size={15} /> Exit
+              {/* Checkbox agreement */}
+              <label className="pre-rules-agreement">
+                <input
+                  type="checkbox"
+                  checked={rulesAcknowledged}
+                  onChange={(e) => setRulesAcknowledged(e.target.checked)}
+                />
+                <div>
+                  <strong>
+                    I have read, understood, and agree to all 9 examination rules and policy guidelines.
+                  </strong>
+                  <small>
+                    I consent to continuous camera and microphone surveillance, automated AI violation tracking, and understand that 3 violations will immediately terminate my exam attempt.
+                  </small>
+                </div>
+              </label>
+
+              {error && (
+                <div className="alert-preflight-error" style={{ marginBottom: 18 }}>
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="pre-start-actions">
+                <Link className="btn btn-outline" to="/student">
+                  <ArrowLeft size={16} /> Back to Dashboard
                 </Link>
                 <button
-                  className="btn btn-primary btn-start-exam"
-                  disabled={!allChecksPassed || starting}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    startExam(false);
-                  }}
+                  type="button"
+                  className="btn btn-primary btn-launch-exam"
+                  disabled={!canStartExam || starting}
+                  onClick={() => startExam(false)}
                 >
                   {starting ? (
                     <>
-                      <RefreshCw size={15} className="spin" /> Authorizing Live Exam...
+                      <RefreshCw size={16} className="spin" /> Launching Exam Session...
                     </>
                   ) : (
                     <>
-                      Enter Live Exam Mode <ArrowRight size={16} />
+                      START EXAMINATION <ArrowRight size={17} />
                     </>
                   )}
                 </button>
               </div>
 
-              {error && (
-                <div className="alert-preflight-error" style={{ marginTop: 14 }}>
-                  <AlertCircle size={18} />
-                  <div style={{ flex: 1, textAlign: "left" }}>
-                    <strong>{error}</strong>
-                    {error.toLowerCase().includes("fullscreen") && (
-                      <div style={{ marginTop: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary small"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setError("");
-                            startExam(false);
-                          }}
-                        >
-                          <Maximize2 size={14} /> Retry in Fullscreen Mode
-                        </button>
-                      </div>
-                    )}
-                    {error.toLowerCase().includes("camera") && (
-                      <div style={{ marginTop: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary small"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setError("");
-                            runVerification();
-                          }}
-                        >
-                          <RefreshCw size={14} /> Re-verify Camera
-                        </button>
-                      </div>
-                    )}
-                    {error.toLowerCase().includes("already submitted") && (
-                      <div style={{ marginTop: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-primary small"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setError("");
-                            startExam(true);
-                          }}
-                        >
-                          <RotateCcw size={14} /> Retake Exam Practice
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {!allChecksPassed && (
+              {!canStartExam && (
                 <p className="start-disabled-hint">
-                  * Complete all 9 verification steps above to unlock the Start Examination button.
+                  * Enable camera, microphone, and accept the agreement checkbox above to unlock the Start Examination button. (Exam timer will only begin after you click Start Examination).
                 </p>
               )}
             </div>
@@ -1301,7 +1334,7 @@ export default function Exam() {
   }
 
   // -------------------------------------------------------------
-  // AUTOMATICALLY TERMINATED EXAMINATION SCREEN
+  // FEATURE 2: AUTOMATICALLY TERMINATED EXAMINATION SCREEN
   // -------------------------------------------------------------
   if (isTerminated || attempt?.status === "TERMINATED" || result?.status === "TERMINATED") {
     let r =
@@ -1310,9 +1343,12 @@ export default function Exam() {
       (result?.score != null ? result : null) ||
       (attempt?.score != null ? attempt : null);
 
-    // Proactive fallback evaluation so result is never empty or stuck loading
     if (!r && questions.length > 0) {
-      r = computeClientEvaluation(questions, answers || attempt?.answers || {}, exam?.configuration);
+      r = computeClientEvaluation(
+        questions,
+        answers || attempt?.answers || {},
+        exam?.configuration
+      );
     }
 
     const rawHistory = terminationData.violationHistory?.length
@@ -1365,14 +1401,17 @@ export default function Exam() {
       }
     };
 
-    // Calculate pass/fail status if existing exam configuration supports it
     let passFailStatus = null;
     if (r && exam?.configuration) {
       if (exam.configuration.passingPercentage != null) {
         const pct = (r.score / (r.maximumMarks || 1)) * 100;
         passFailStatus = pct >= exam.configuration.passingPercentage ? "PASS" : "FAIL";
-      } else if (exam.configuration.passMarks != null || exam.configuration.passingMarks != null) {
-        const req = exam.configuration.passMarks ?? exam.configuration.passingMarks;
+      } else if (
+        exam.configuration.passMarks != null ||
+        exam.configuration.passingMarks != null
+      ) {
+        const req =
+          exam.configuration.passMarks ?? exam.configuration.passingMarks;
         passFailStatus = r.score >= req ? "PASS" : "FAIL";
       }
     }
@@ -1422,7 +1461,9 @@ export default function Exam() {
               </div>
               <div className="termination-detail-item">
                 <span className="label">Exam Name</span>
-                <span className="value">{exam?.title || attempt?.examTitle || "Online Examination"}</span>
+                <span className="value">
+                  {exam?.title || attempt?.examTitle || "Online Examination"}
+                </span>
               </div>
               <div className="termination-detail-item">
                 <span className="label">Exam Date and Time</span>
@@ -1463,7 +1504,11 @@ export default function Exam() {
                       Violation {v.warningNumber || i + 1}
                     </span>
                     <div className="violation-info">
-                      <strong>{v.description || v.message || `Proctoring violation ${i + 1}`}</strong>
+                      <strong>
+                        {v.description ||
+                          v.message ||
+                          `Proctoring violation ${i + 1}`}
+                      </strong>
                       <small>
                         <Clock3 size={11} /> Timestamp: {formatTime(v.timestamp)}
                       </small>
@@ -1518,16 +1563,24 @@ export default function Exam() {
                       <strong>{r.unanswered ?? r.unattempted ?? 0}</strong>
                     </div>
                     {passFailStatus && (
-                      <div className={`term-metric-tile ${passFailStatus.toLowerCase()}`}>
+                      <div
+                        className={`term-metric-tile ${passFailStatus.toLowerCase()}`}
+                      >
                         <small>Pass / Fail Status</small>
                         <strong>{passFailStatus}</strong>
                       </div>
                     )}
                   </div>
 
-                  {/* Answer Explanations Review Section */}
+                  {/* Review of Attempted Questions & Explanations */}
                   <div className="review-section" style={{ marginTop: 24 }}>
-                    <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>
+                    <h4
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 800,
+                        marginBottom: 12,
+                      }}
+                    >
                       Attempted Questions & Answer Explanations
                     </h4>
                     {questions.map((qItem, i) => {
@@ -1544,7 +1597,9 @@ export default function Exam() {
                                 ? d.selectedOptions
                                     .map(
                                       (value) =>
-                                        `${String.fromCharCode(65 + value)}. ${qItem.options[value]}`
+                                        `${String.fromCharCode(65 + value)}. ${
+                                          qItem.options[value]
+                                        }`
                                     )
                                     .join(", ")
                                 : d.selectedValue
@@ -1554,7 +1609,9 @@ export default function Exam() {
                               ? d.correctOptions
                                   .map(
                                     (value) =>
-                                      `${String.fromCharCode(65 + value)}. ${qItem.options[value]}`
+                                      `${String.fromCharCode(65 + value)}. ${
+                                        qItem.options[value]
+                                      }`
                                   )
                                   .join(", ")
                               : d?.correctValue}
@@ -1568,7 +1625,7 @@ export default function Exam() {
               )}
             </div>
 
-            {/* Navigation Actions (Strictly no retake or resume!) */}
+            {/* Strict: No retake or restart buttons! */}
             <div className="termination-actions-bar">
               <Link className="btn btn-primary" to="/student/results">
                 View All Results in Portal <ArrowRight size={16} />
@@ -1584,7 +1641,7 @@ export default function Exam() {
   }
 
   // -------------------------------------------------------------
-  // POST-EXAM RESULTS SCREEN
+  // POST-EXAM RESULTS SCREEN (NORMAL SUBMISSION)
   // -------------------------------------------------------------
   if (result) {
     const r = result.result;
@@ -1596,7 +1653,9 @@ export default function Exam() {
           </div>
           <span className="eyebrow">EXAM COMPLETED & SUBMITTED</span>
           <h1>Well done, {user.name.split(" ")[0]}!</h1>
-          <p>Your examination responses and proctoring audit log have been recorded.</p>
+          <p>
+            Your examination responses and proctoring audit log have been recorded.
+          </p>
 
           {isFlagged && (
             <div className="flagged-submission-notice">
@@ -1604,7 +1663,7 @@ export default function Exam() {
               <div>
                 <strong>Proctoring Notice: Flagged for Review</strong>
                 <p>
-                  This session accumulated 3 proctoring warnings during testing. Responses were submitted successfully, but results remain subject to proctor approval.
+                  This session accumulated proctoring warnings during testing. Responses were submitted successfully, but results remain subject to proctor review.
                 </p>
               </div>
             </div>
@@ -1634,30 +1693,31 @@ export default function Exam() {
               <small>Accuracy</small>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 16, marginBottom: 24, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              justifyContent: "center",
+              marginTop: 16,
+              marginBottom: 24,
+              flexWrap: "wrap",
+            }}
+          >
             <Link className="btn btn-primary" to="/student/results">
               View My Results <ArrowRight size={16} />
             </Link>
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => {
-                setResult(null);
-                setAttempt(null);
-                startExam(true);
-              }}
-            >
-              <RotateCcw size={15} /> Retake Exam Practice
-            </button>
+            <Link className="btn btn-outline" to="/student">
+              Student Dashboard
+            </Link>
           </div>
           <div className="review-section">
             <h3>Answer explanations</h3>
-            {questions.map((q, i) => {
-              const d = r.details.find((item) => item.id === q.id);
+            {questions.map((qItem, i) => {
+              const d = r.details.find((item) => item.id === qItem.id);
               return (
-                <div key={q.id} className="review-item">
+                <div key={qItem.id} className="review-item">
                   <strong>
-                    Q{i + 1}. {q.text}
+                    Q{i + 1}. {qItem.text}
                   </strong>
                   <p>
                     Your answer:{" "}
@@ -1666,7 +1726,9 @@ export default function Exam() {
                         ? d.selectedOptions
                             .map(
                               (value) =>
-                                `${String.fromCharCode(65 + value)}. ${q.options[value]}`
+                                `${String.fromCharCode(65 + value)}. ${
+                                  qItem.options[value]
+                                }`
                             )
                             .join(", ")
                         : d.selectedValue
@@ -1676,7 +1738,9 @@ export default function Exam() {
                       ? d.correctOptions
                           .map(
                             (value) =>
-                              `${String.fromCharCode(65 + value)}. ${q.options[value]}`
+                              `${String.fromCharCode(65 + value)}. ${
+                                qItem.options[value]
+                              }`
                           )
                           .join(", ")
                       : d?.correctValue}
@@ -1692,36 +1756,42 @@ export default function Exam() {
   }
 
   // -------------------------------------------------------------
-  // ACTIVE EXAMINATION INTERFACE WITH CONTINUOUS PROCTORING HUD
+  // FEATURE 3: ACTIVE EXAMINATION INTERFACE WITH NAVIGATION & HUD
   // -------------------------------------------------------------
   const q = questions[idx];
-  const segments = exam.configuration?.segments || [];
-  const elapsed = Math.max(0, attempt.durationSeconds - seconds);
-  let activeSegment = segments.at(-1);
-  if (segments.length) {
-    let boundary = 0;
-    for (const segment of segments) {
-      boundary += segment.durationMinutes * 60;
-      if (elapsed < boundary) {
-        activeSegment = segment;
-        break;
-      }
+
+  // Helper to jump to a section's first question
+  const handleSectionClick = (sectionName) => {
+    const targetIdx = questions.findIndex((item) => item.subject === sectionName);
+    if (targetIdx >= 0) {
+      setIdx(targetIdx);
     }
-  }
-  const activeSubjects = new Set(
-    activeSegment?.subjects || exam.subjects || []
-  );
-  const permittedIndexes = questions
-    .map((item, index) => (activeSubjects.has(item.subject) ? index : -1))
-    .filter((index) => index >= 0);
-  const positionInSegment = permittedIndexes.indexOf(idx);
+  };
 
   return (
     <div className="exam-screen">
+      {/* FEATURE 2: 3-Second Termination Countdown Overlay */}
+      {countdownData && (
+        <div className="countdown-modal-overlay">
+          <div className="countdown-modal-card">
+            <div className="countdown-huge-circle">
+              {countdownData.secondsRemaining}
+            </div>
+            <h2>EXAMINATION TERMINATION IN {countdownData.secondsRemaining}s</h2>
+            <p>{countdownData.formattedMessage}</p>
+            <div className="countdown-freeze-note">
+              <AlertTriangle size={15} /> All inputs frozen. Examination answers are being recorded and submitted.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Real-time Warning Banner (Three-Level Warning System) */}
-      {activeWarning && (
+      {activeWarning && !countdownData && (
         <div
-          className={`proctoring-warning-bar warning-level-${activeWarning.warningLevel} ${activeWarning.warningCount === 2 ? "flagged-bar" : ""}`}
+          className={`proctoring-warning-bar warning-level-${activeWarning.warningLevel} ${
+            activeWarning.warningCount === 2 ? "flagged-bar" : ""
+          }`}
         >
           <div className="warning-bar-content">
             <AlertTriangle size={20} className="warning-icon-pulse" />
@@ -1747,7 +1817,7 @@ export default function Exam() {
           <div>
             <strong>{exam.title}</strong>
             <small>
-              Live Proctored Official Assessment · {questions.length} questions
+              Live Proctored Assessment · Section: {currentSection} · {questions.length} Questions
             </small>
           </div>
         </div>
@@ -1766,13 +1836,34 @@ export default function Exam() {
           <button
             className="btn btn-primary small"
             onClick={() => setConfirm(true)}
+            disabled={countdownData !== null}
           >
             Submit Exam <Send size={14} />
           </button>
         </div>
       </header>
 
-      {/* Main Body */}
+      {/* FEATURE 3: Dynamic Section Navigation Tabs */}
+      {sections.length > 1 && (
+        <nav className="exam-section-tabs">
+          {sections.map((sec) => (
+            <button
+              key={sec.name}
+              type="button"
+              className={`section-tab-item ${
+                currentSection === sec.name ? "active" : ""
+              }`}
+              onClick={() => handleSectionClick(sec.name)}
+              disabled={countdownData !== null}
+            >
+              <span>{sec.name}</span>
+              <span className="section-tab-count">{sec.count} Qs</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {/* Main Examination Layout */}
       <div className="exam-body">
         <main className="question-area">
           <div className="question-meta">
@@ -1806,12 +1897,18 @@ export default function Exam() {
               question={q}
               selected={answers[q.id]}
               onSelect={answer}
-              disabled={segments.length > 0 && !activeSubjects.has(q.subject)}
+              disabled={countdownData !== null}
             />
           </div>
+
+          {/* Question Controls & Navigation */}
           <div className="question-controls">
             <div className="question-left-actions">
-              <button className="btn btn-outline small" onClick={clear}>
+              <button
+                className="btn btn-outline small"
+                onClick={clear}
+                disabled={countdownData !== null}
+              >
                 Clear Response
               </button>
               <button
@@ -1820,6 +1917,7 @@ export default function Exam() {
                   (marked.includes(q.id) ? "btn-primary" : "btn-soft")
                 }
                 onClick={toggleMark}
+                disabled={countdownData !== null}
               >
                 <Bookmark size={15} />{" "}
                 {marked.includes(q.id) ? "Marked" : "Mark for Review"}
@@ -1828,40 +1926,54 @@ export default function Exam() {
             <div className="question-navigation">
               <button
                 className="btn btn-outline small"
-                disabled={positionInSegment <= 0}
-                onClick={() => setIdx(permittedIndexes[positionInSegment - 1])}
+                disabled={idx <= 0 || countdownData !== null}
+                onClick={() => setIdx(idx - 1)}
               >
-                <ArrowLeft size={15} /> Previous
+                <ArrowLeft size={15} /> Previous Question
               </button>
               <button
                 className="btn btn-primary small"
-                onClick={() =>
-                  positionInSegment < permittedIndexes.length - 1
-                    ? setIdx(permittedIndexes[positionInSegment + 1])
-                    : setConfirm(true)
-                }
+                disabled={countdownData !== null}
+                onClick={() => {
+                  if (idx < questions.length - 1) {
+                    setIdx(idx + 1);
+                  } else {
+                    setConfirm(true);
+                  }
+                }}
               >
-                {positionInSegment === permittedIndexes.length - 1
-                  ? "Finish & Submit"
-                  : "Save & Next"}{" "}
-                <ArrowRight size={15} />
+                {idx === questions.length - 1 ? (
+                  <>
+                    Finish & Submit Exam <Send size={15} />
+                  </>
+                ) : (
+                  <>
+                    Next Question <ArrowRight size={15} />
+                  </>
+                )}
               </button>
             </div>
           </div>
         </main>
 
-        {/* Sidebar with Live Webcam Proctoring HUD */}
+        {/* Sidebar with Live Webcam & Audio Proctoring HUD */}
         <aside className="question-sidebar">
           {/* Live Webcam Widget */}
           <div className="live-proctoring-widget">
             <div className="proctoring-widget-header">
               <div className="active-cam-badge">
-                <span className="green-pulse" /> CAMERA ACTIVE
+                <span className="green-pulse" /> AI PROCTOR ACTIVE
               </div>
               <span
-                className={`proctor-warning-badge ${warningCount > 0 ? (isFlagged ? "badge-danger" : "badge-warn") : "badge-ok"}`}
+                className={`proctor-warning-badge ${
+                  warningCount > 0
+                    ? isFlagged
+                      ? "badge-danger"
+                      : "badge-warn"
+                    : "badge-ok"
+                }`}
               >
-                Warnings: {warningCount}/3
+                Violations: {warningCount}/3
               </span>
             </div>
             <div className="proctoring-video-frame">
@@ -1879,43 +1991,96 @@ export default function Exam() {
               />
               <div className="video-secure-watermark">
                 <span>{user.name}</span>
-                <span>REC ● AI MONITOR</span>
+                <span>REC ● AI VISION & AUDIO</span>
               </div>
             </div>
 
-            {/* Live Proctoring Status Panel (Requirement 8) */}
+            {/* Live Proctoring Status Panel (Features 4 & 5) */}
             <div className="proctoring-status-panel">
               <div className="proctoring-status-row">
                 <span className="status-label">Camera:</span>
-                <span className={`status-val ${proctoringStats.cameraStatus === "Connected" ? "val-green" : "val-red"}`}>
-                  <span className={proctoringStats.cameraStatus === "Connected" ? "green-dot" : "red-dot"} />
+                <span
+                  className={`status-val ${
+                    proctoringStats.cameraStatus === "Connected"
+                      ? "val-green"
+                      : "val-red"
+                  }`}
+                >
+                  <span
+                    className={
+                      proctoringStats.cameraStatus === "Connected"
+                        ? "green-dot"
+                        : "red-dot"
+                    }
+                  />
                   {proctoringStats.cameraStatus}
                 </span>
               </div>
               <div className="proctoring-status-row">
-                <span className="status-label">AI Face Detection:</span>
-                <span className={`status-val ${proctoringStats.aiStatus.includes("Active") ? "val-green" : "val-amber"}`}>
-                  {proctoringStats.aiStatus}
-                </span>
-              </div>
-              <div className="proctoring-status-row">
-                <span className="status-label">Face Status:</span>
-                <span className={`status-val ${proctoringStats.faceStatusCode === "normal" ? "val-green" : (proctoringStats.faceStatusCode === "no_face" ? "val-amber" : "val-red")}`}>
+                <span className="status-label">Face Detection:</span>
+                <span
+                  className={`status-val ${
+                    proctoringStats.faceStatusCode === "normal"
+                      ? "val-green"
+                      : proctoringStats.faceStatusCode === "no_face"
+                      ? "val-amber"
+                      : "val-red"
+                  }`}
+                >
                   {proctoringStats.faceStatus}
                 </span>
               </div>
               <div className="proctoring-status-row">
-                <span className="status-label">Last Camera Check:</span>
-                <span className="status-val muted-val">{proctoringStats.lastCheckTime || "Running..."}</span>
+                <span className="status-label">Microphone:</span>
+                <span
+                  className={`status-val ${
+                    proctoringStats.micStatus === "Connected"
+                      ? "val-green"
+                      : "val-red"
+                  }`}
+                >
+                  <span
+                    className={
+                      proctoringStats.micStatus === "Connected"
+                        ? "green-dot"
+                        : "red-dot"
+                    }
+                  />
+                  {proctoringStats.micStatus}
+                </span>
               </div>
               <div className="proctoring-status-row">
-                <span className="status-label">Monitoring Interval:</span>
-                <span className="status-val muted-val">{proctoringStats.monitoringInterval}</span>
+                <span className="status-label">Audio Monitor:</span>
+                <span
+                  className={`status-val ${
+                    proctoringStats.audioMonitoringStatus.includes("Voice")
+                      ? "val-red"
+                      : proctoringStats.audioMonitoringStatus.includes("Silence")
+                      ? "val-green"
+                      : "val-amber"
+                  }`}
+                >
+                  {proctoringStats.audioMonitoringStatus}
+                </span>
               </div>
               <div className="proctoring-status-row">
                 <span className="status-label">Total Violations:</span>
-                <span className={`status-val ${warningCount > 0 ? (warningCount >= 2 ? "val-red" : "val-amber") : "val-green"}`}>
+                <span
+                  className={`status-val ${
+                    warningCount > 0
+                      ? warningCount >= 2
+                        ? "val-red"
+                        : "val-amber"
+                      : "val-green"
+                  }`}
+                >
                   <strong>{warningCount} of 3</strong>
+                </span>
+              </div>
+              <div className="proctoring-status-row">
+                <span className="status-label">Last Check:</span>
+                <span className="status-val muted-val">
+                  {proctoringStats.lastCheckTime || "Running..."}
                 </span>
               </div>
             </div>
@@ -1930,6 +2095,7 @@ export default function Exam() {
             <ShieldCheck size={19} color="#10b981" />
           </div>
 
+          {/* Question Palette with 4 Visual States */}
           <div className="palette-head">
             <h3>Question Palette</h3>
             <span>
@@ -1955,27 +2121,28 @@ export default function Exam() {
             </span>
           </div>
           <div className="question-palette">
-            {questions.map((item, i) => (
-              <button
-                title={"Question " + (i + 1)}
-                key={item.id}
-                disabled={
-                  segments.length > 0 && !activeSubjects.has(item.subject)
-                }
-                onClick={() => setIdx(i)}
-                className={
-                  (hasAnswer(answers[item.id])
-                    ? "answered"
-                    : marked.includes(item.id)
-                      ? "marked"
-                      : visited.includes(item.id)
-                        ? "visited"
-                        : "") + (idx === i ? " current" : "")
-                }
-              >
-                {i + 1}
-              </button>
-            ))}
+            {questions.map((item, i) => {
+              const isAnswered = hasAnswer(answers[item.id]);
+              const isMarked = marked.includes(item.id);
+              const isVisited = visited.includes(item.id);
+
+              let statusClass = "unvisited";
+              if (isAnswered) statusClass = "answered";
+              else if (isMarked) statusClass = "marked";
+              else if (isVisited) statusClass = "visited";
+
+              return (
+                <button
+                  title={`Question ${i + 1} (${item.subject})`}
+                  key={item.id}
+                  disabled={countdownData !== null}
+                  onClick={() => setIdx(i)}
+                  className={`${statusClass} ${idx === i ? " current" : ""}`}
+                >
+                  {i + 1}
+                </button>
+              );
+            })}
           </div>
 
           <div className="exam-summary">
@@ -1998,7 +2165,11 @@ export default function Exam() {
             </div>
             <div>
               <span>Proctoring Warnings</span>
-              <strong style={{ color: warningCount > 0 ? "#e11d48" : "#10b981" }}>
+              <strong
+                style={{
+                  color: warningCount > 0 ? "#e11d48" : "#10b981",
+                }}
+              >
                 {warningCount} / 3 {isFlagged ? "(FLAGGED)" : ""}
               </strong>
             </div>
@@ -2007,13 +2178,13 @@ export default function Exam() {
           <div className="exam-sidebar-note">
             <ShieldCheck size={16} color="#10b981" />
             <span>
-              Live continuous AI proctoring active. Camera stream, face alignment, and window focus are securely monitored.
+              Continuous AI vision and audio proctoring active. Camera stream, face alignment, and background voice are monitored in real time.
             </span>
           </div>
         </aside>
       </div>
 
-      {/* Confirmation Modal */}
+      {/* Submission Confirmation Modal */}
       {confirm && (
         <div className="modal-cover">
           <div className="confirm-modal">
@@ -2022,7 +2193,7 @@ export default function Exam() {
             </div>
             <h2>Submit your examination?</h2>
             <p>
-              This action is final. Your webcam proctoring session will end and responses will be locked.
+              This action is final. Your webcam and microphone proctoring session will end and responses will be locked.
             </p>
             <div className="modal-counts">
               <span>

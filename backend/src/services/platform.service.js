@@ -169,6 +169,15 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       if (locked.status !== 'captured') {
         await client.query(`UPDATE payments SET status='captured',gateway_payment_id=$1,failure_reason=NULL,verified_at=NOW(),updated_at=NOW() WHERE id=$2`, [trustedPayment.id, stored.id]);
         await client.query(`INSERT INTO registrations (id,student_id,exam_id,payment_id,status) VALUES ($1,$2,$3,$4,'confirmed') ON CONFLICT (student_id,exam_id) DO UPDATE SET payment_id=EXCLUDED.payment_id,status='confirmed'`, [uid('reg'), stored.student_id, stored.exam_id, stored.id]);
+        const examForEnroll = await getExam(stored.exam_id, client);
+        if (examForEnroll?.courseId) {
+          await client.query(
+            `INSERT INTO course_enrollments (id, student_id, course_id, fee_paid, payment_method, status)
+             VALUES ($1, $2, $3, $4, 'gateway', 'active')
+             ON CONFLICT (student_id, course_id) DO UPDATE SET status = 'active'`,
+            [uid('enr'), stored.student_id, examForEnroll.courseId, Number(stored.amount || 0)]
+          );
+        }
         await log(stored.student_id, 'PAYMENT_CAPTURED_AND_ENROLLED', `${stored.exam_id}:${trustedPayment.id}`, client);
       }
       const finalPayment = (await client.query('SELECT * FROM payments WHERE id=$1', [stored.id])).rows[0];
@@ -451,38 +460,36 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
       return this.getStudentWallet(studentId);
     },
     async studentDashboard(studentId) {
-      const [registrations, attempts, enrolledCourses] = await Promise.all([
+      const [registrations, attempts, studentCourses] = await Promise.all([
         db.query('SELECT * FROM registrations WHERE student_id=$1 ORDER BY created_at DESC', [studentId]),
         db.query('SELECT * FROM attempts WHERE student_id=$1 ORDER BY started_at DESC', [studentId]),
-        db.query(`
-          SELECT e.*, c.name AS course_name, c.slug, c.category, c.exam_type,
-                 c.short_description, c.image_url, c.banner_image_url,
-                 c.fee, c.discount_percent, u.name AS teacher_name
-          FROM course_enrollments e
-          JOIN courses c ON c.id = e.course_id
-          LEFT JOIN users u ON u.id = c.teacher_id
-          WHERE e.student_id = $1 AND e.status = 'active'
-          ORDER BY e.enrolled_at DESC
-        `, [studentId])
+        this.listStudentCourses(studentId),
       ]);
       const wallet = await this.getStudentWallet(studentId);
       return {
         registrations: registrations.rows.map(registration),
         attempts: attempts.rows.map(attempt),
-        enrolledCourses: enrolledCourses.rows.map(r => ({
+        enrolledCourses: studentCourses.map(r => ({
           id: r.id,
-          courseId: r.course_id,
-          courseName: r.course_name,
+          enrollmentId: r.enrollmentId || r.id,
+          courseId: r.courseId,
+          courseName: r.courseName || r.name,
+          name: r.name || r.courseName,
           slug: r.slug,
           category: r.category,
-          examType: r.exam_type,
-          shortDescription: r.short_description,
-          imageUrl: r.image_url,
-          bannerImageUrl: r.banner_image_url,
-          feePaid: Number(r.fee_paid),
-          teacherName: r.teacher_name,
+          examType: r.examType,
+          shortDescription: r.shortDescription,
+          imageUrl: r.imageUrl,
+          bannerImageUrl: r.bannerImageUrl,
+          feePaid: Number(r.feePaid ?? 0),
+          teacherName: r.teacherName,
+          durationDays: r.durationDays || 180,
+          mockTestCount: r.mockTestCount || 1,
+          examCount: r.examCount || 1,
+          primaryExamId: r.primaryExamId,
+          linkedExams: r.linkedExams || [],
           status: r.status,
-          enrolledAt: iso(r.enrolled_at)
+          enrolledAt: r.enrolledAt,
         })),
         wallet: {
           balance: wallet.balance,
@@ -752,19 +759,27 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
     },
     async listStudentCourses(studentId) {
       const allExams = await listExams(db, { authenticated: true });
-      const { rows } = await db.query(`
-        SELECT e.*, c.name AS course_name, c.slug, c.category, c.exam_type,
-               c.short_description, c.full_description, c.image_url, c.banner_image_url,
-               c.fee, c.discount_percent, c.duration_days, c.mock_test_count,
-               u.name AS teacher_name,
-               (SELECT COUNT(*)::int FROM published_exams p WHERE p.course_id = c.id) AS exam_count
-        FROM course_enrollments e
-        JOIN courses c ON c.id = e.course_id
-        LEFT JOIN users u ON u.id = c.teacher_id
-        WHERE e.student_id = $1 AND e.status = 'active'
-        ORDER BY e.enrolled_at DESC
-      `, [studentId]);
-      return rows.map(r => {
+      const [enrollmentRes, regRes] = await Promise.all([
+        db.query(`
+          SELECT e.*, c.name AS course_name, c.slug, c.category, c.exam_type,
+                 c.short_description, c.full_description, c.image_url, c.banner_image_url,
+                 c.fee, c.discount_percent, c.duration_days, c.mock_test_count,
+                 u.name AS teacher_name,
+                 (SELECT COUNT(*)::int FROM published_exams p WHERE p.course_id = c.id) AS exam_count
+          FROM course_enrollments e
+          JOIN courses c ON c.id = e.course_id
+          LEFT JOIN users u ON u.id = c.teacher_id
+          WHERE e.student_id = $1 AND e.status = 'active'
+          ORDER BY e.enrolled_at DESC
+        `, [studentId]),
+        db.query(`
+          SELECT r.* FROM registrations r
+          WHERE r.student_id = $1 AND r.status = 'confirmed'
+          ORDER BY r.created_at DESC
+        `, [studentId])
+      ]);
+
+      const courses = enrollmentRes.rows.map(r => {
         const matchingExams = allExams.filter(x =>
           x.courseId === r.course_id ||
           (x.type && r.exam_type && x.type.toLowerCase().includes(r.exam_type.toLowerCase())) ||
@@ -775,6 +790,7 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
 
         return {
           id: r.id,
+          enrollmentId: r.id,
           courseId: r.course_id,
           courseName: r.course_name,
           name: r.course_name,
@@ -786,6 +802,7 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
           imageUrl: r.image_url,
           bannerImageUrl: r.banner_image_url,
           feePaid: Number(r.fee_paid),
+          paymentMethod: r.payment_method,
           teacherName: r.teacher_name,
           durationDays: r.duration_days,
           mockTestCount: r.mock_test_count,
@@ -812,6 +829,55 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
           enrolledAt: iso(r.enrolled_at)
         };
       });
+
+      // Include registered exams not already covered by an existing course
+      const coveredExamIds = new Set();
+      courses.forEach(c => {
+        if (c.primaryExamId) coveredExamIds.add(c.primaryExamId);
+        (c.linkedExams || []).forEach(x => coveredExamIds.add(x.id));
+      });
+
+      for (const reg of regRes.rows) {
+        if (coveredExamIds.has(reg.exam_id)) continue;
+        const exam = allExams.find(x => x.id === reg.exam_id);
+        if (!exam) continue;
+
+        coveredExamIds.add(reg.exam_id);
+        courses.push({
+          id: reg.id,
+          enrollmentId: reg.id,
+          courseId: exam.courseId || exam.id,
+          courseName: exam.title,
+          name: exam.title,
+          slug: exam.id,
+          category: exam.type || 'Registered Examination',
+          examType: exam.type || 'Examination',
+          shortDescription: exam.description || exam.syllabus || 'Registered examination access.',
+          fullDescription: exam.description || exam.syllabus || '',
+          imageUrl: exam.imageUrl || null,
+          bannerImageUrl: exam.imageUrl || null,
+          feePaid: Number(exam.fee || 0),
+          paymentMethod: 'free',
+          teacherName: 'Meritx Faculty',
+          durationDays: 180,
+          mockTestCount: 1,
+          examCount: 1,
+          primaryExamId: exam.id,
+          linkedExams: [{
+            id: exam.id,
+            title: exam.title,
+            duration: exam.duration,
+            questions: exam.questions,
+            marks: exam.marks,
+            subject: exam.subject,
+            tag: exam.tag || 'Free',
+          }],
+          status: 'active',
+          enrolledAt: iso(reg.created_at)
+        });
+      }
+
+      return courses;
     },
     async getStudentProfile(studentId) {
       const [userResult, profileResult] = await Promise.all([
@@ -1453,6 +1519,33 @@ export function createPlatformService(db, { env = {}, razorpay = null } = {}) {
           `INSERT INTO registrations (id,student_id,exam_id,payment_id,status) VALUES ($1,$2,$3,$4,'confirmed') RETURNING *`,
           [uid('reg'), studentId, examId, paymentRow.id],
         )).rows[0];
+
+        // Also ensure student is enrolled in the linked or matching course in course_enrollments if a course exists
+        let targetCourseId = exam.courseId;
+        if (!targetCourseId) {
+          const courseMatch = await client.query(
+            `SELECT id FROM courses
+             WHERE status<>'archived'
+             AND (
+               exam_type = $1
+               OR ($2 LIKE 'jee-%' AND (exam_type ILIKE '%jee%' OR slug ILIKE '%jee%'))
+               OR ($2 LIKE 'neet-%' AND (exam_type ILIKE '%neet%' OR slug ILIKE '%neet%'))
+               OR ($2 LIKE 'mht-%' AND (exam_type ILIKE '%mht%' OR slug ILIKE '%mht%'))
+             )
+             ORDER BY display_order ASC LIMIT 1`,
+            [exam.type || '', examId]
+          );
+          if (courseMatch.rows[0]) targetCourseId = courseMatch.rows[0].id;
+        }
+        if (targetCourseId) {
+          await client.query(
+            `INSERT INTO course_enrollments (id, student_id, course_id, fee_paid, payment_method, status)
+             VALUES ($1, $2, $3, 0, 'free', 'active')
+             ON CONFLICT (student_id, course_id) DO UPDATE SET status = 'active'`,
+            [uid('enr'), studentId, targetCourseId]
+          );
+        }
+
         await log(studentId, 'EXAM_REGISTER', examId, client);
         return { registration: registration(registrationRow), payment: payment(paymentRow) };
       });

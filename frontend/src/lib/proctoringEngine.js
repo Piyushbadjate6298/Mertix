@@ -1,15 +1,19 @@
 /**
  * MeritX Live Examination Proctoring Engine
- * Upgraded AI Computer Vision & Continuous Monitoring System
+ * Upgraded AI Computer Vision & Continuous Audio/Video Monitoring System
  *
  * Implements:
- * - Google MediaPipe FaceDetector in VIDEO running mode
- * - Continuous 3-second recursive camera and frame analysis
- * - Reliable Black Screen & Camera Hardware Interruption detection
+ * - Google MediaPipe FaceDetector in VIDEO running mode + Optical fallback
+ * - Continuous 3-second recursive camera and frame analysis (8 independent checks)
+ * - Continuous AI Microphone Audio Monitoring via Web Audio API (voice band 300Hz-3400Hz)
  * - Incident State Machine: Each continuous incident counts once;
  *   resolves when normalized; subsequent incidents trigger next violation
  * - 10-second startup grace period to prevent initialization false strikes
- * - Real-time proctoring HUD stats reporting
+ * - Sequential Warning Progression:
+ *     Warning 1 of 3: Warning recorded
+ *     Warning 2 of 3: Final warning
+ *     Warning 3 of 3: Visible 3-second countdown (3 -> 2 -> 1 -> 0) -> automatic termination
+ * - Real-time proctoring HUD stats reporting (Camera, Face, Mic, Audio Level, Violations)
  * - Automatic exam termination on 3 violations with answer sync
  */
 import { FilesetResolver, FaceDetector } from "@mediapipe/tasks-vision";
@@ -88,6 +92,7 @@ export class ProctoringEngine {
     onWarning,
     onStatusChange,
     onStatsUpdate,
+    onCountdownTick,
     onTerminated,
     getAnswers,
   }) {
@@ -97,21 +102,37 @@ export class ProctoringEngine {
     this.onWarning = onWarning || (() => {});
     this.onStatusChange = onStatusChange || (() => {});
     this.onStatsUpdate = onStatsUpdate || (() => {});
+    this.onCountdownTick = onCountdownTick || (() => {});
     this.onTerminated = onTerminated || (() => {});
     this.getAnswers = getAnswers || (() => ({}));
 
+    // Video & Camera State
     this.stream = null;
     this.videoElement = null;
     this.canvasElement = null;
-    this.checkTimer = null;
-    this.heartbeatTimer = null;
     this.faceDetector = null;
 
+    // Web Audio State
+    this.audioStream = null;
+    this.audioContext = null;
+    this.audioAnalyser = null;
+    this.audioSourceNode = null;
+    this.audioLevel = 0;
+    this.micStatus = "Connected";
+    this.audioMonitoringStatus = "Active (Silence)";
+
+    // Timers & Loops
+    this.checkTimer = null;
+    this.heartbeatTimer = null;
+    this.countdownTimer = null;
+
+    // Violation State Machine
     this.warningCount = 0;
     this.maxWarnings = 3;
     this.isFlagged = false;
     this.isTerminated = false;
     this.isProcessingViolation = false;
+    this.isCountingDown = false;
     this.proctoringStatus = "active";
     this.violationHistory = [];
     this.wasFullscreen = false;
@@ -187,6 +208,44 @@ export class ProctoringEngine {
         onTrigger: (data) => this.recordViolation(data),
         onResolved: (code) => this.handleIncidentResolved(code),
       }),
+      // AUDIO PROCTORING INCIDENTS
+      BACKGROUND_SPEECH: new IncidentTracker({
+        code: "BACKGROUND_SPEECH",
+        category: "exam_rule_violation",
+        baseDescription: "Background voice detected. Please maintain examination silence.",
+        threshold: 2, // 2 checks = 6s
+        passThreshold: 1,
+        onTrigger: (data) => this.recordViolation(data),
+        onResolved: (code) => this.handleIncidentResolved(code),
+      }),
+      EXCESSIVE_NOISE: new IncidentTracker({
+        code: "EXCESSIVE_NOISE",
+        category: "exam_rule_violation",
+        baseDescription: "Excessive ambient noise detected. Please ensure a quiet examination environment.",
+        threshold: 2,
+        passThreshold: 1,
+        onTrigger: (data) => this.recordViolation(data),
+        onResolved: (code) => this.handleIncidentResolved(code),
+      }),
+      MICROPHONE_MUTED: new IncidentTracker({
+        code: "MICROPHONE_MUTED",
+        category: "exam_rule_violation",
+        baseDescription: "Microphone audio track was muted or disabled",
+        threshold: 1,
+        passThreshold: 1,
+        onTrigger: (data) => this.recordViolation(data),
+        onResolved: (code) => this.handleIncidentResolved(code),
+      }),
+      MICROPHONE_DISCONNECTED: new IncidentTracker({
+        code: "MICROPHONE_DISCONNECTED",
+        category: "exam_rule_violation",
+        baseDescription: "Microphone disconnected or audio track ended",
+        threshold: 1,
+        passThreshold: 1,
+        onTrigger: (data) => this.recordViolation(data),
+        onResolved: (code) => this.handleIncidentResolved(code),
+      }),
+      // BROWSER & ENVIRONMENT INCIDENTS
       TAB_SWITCH: new IncidentTracker({
         code: "TAB_SWITCH",
         category: "exam_rule_violation",
@@ -219,6 +278,231 @@ export class ProctoringEngine {
 
   setAttemptId(attemptId) {
     this.attemptId = attemptId;
+  }
+
+  /**
+   * Static helper: request camera stream with standard proctoring constraints
+   */
+  static async requestCameraStream() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("Webcam access is not supported by this browser.");
+    }
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: "user",
+      },
+      audio: false,
+    });
+  }
+
+  /**
+   * Static helper: request microphone stream with acoustic echo cancellation
+   */
+  static async requestMicrophoneStream() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error("Microphone access is not supported by this browser.");
+    }
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+  }
+
+  /**
+   * Static helper: create a live reactive volume meter from an audio stream
+   */
+  static createAudioMeter(audioStream, onLevelChange) {
+    if (!audioStream) return () => {};
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return () => {};
+      const ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      const source = ctx.createMediaStreamSource(audioStream);
+      source.connect(analyser);
+
+      let animId = null;
+      const dataArray = new Uint8Array(analyser.fftSize);
+
+      const checkLevel = () => {
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const val = (dataArray[i] - 128) / 128;
+          sum += val * val;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        const level = Math.min(100, Math.round(rms * 160));
+        onLevelChange(level);
+        animId = requestAnimationFrame(checkLevel);
+      };
+
+      animId = requestAnimationFrame(checkLevel);
+
+      return () => {
+        if (animId) cancelAnimationFrame(animId);
+        try {
+          source.disconnect();
+          ctx.close().catch(() => {});
+        } catch {}
+      };
+    } catch (e) {
+      console.warn("createAudioMeter error:", e);
+      return () => {};
+    }
+  }
+
+  /**
+   * Initialize Web Audio API node tree and monitoring listeners
+   */
+  initAudioMonitoring(audioStream) {
+    if (!audioStream) return;
+    this.audioStream = audioStream;
+    const audioTrack = audioStream.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      this.audioContext = new AudioCtx();
+      this.audioAnalyser = this.audioContext.createAnalyser();
+      this.audioAnalyser.fftSize = 512;
+      this.audioAnalyser.smoothingTimeConstant = 0.85;
+
+      this.audioSourceNode = this.audioContext.createMediaStreamSource(audioStream);
+      this.audioSourceNode.connect(this.audioAnalyser);
+
+      // Track listeners
+      this.handleAudioTrackEnded = () => {
+        if (!this.isDestroyed && !this.isTerminated) {
+          this.incidentTrackers.MICROPHONE_DISCONNECTED.recordFailure();
+        }
+      };
+      audioTrack.addEventListener("ended", this.handleAudioTrackEnded);
+
+      this.handleAudioTrackMute = () => {
+        if (!this.isDestroyed && !this.isTerminated) {
+          this.incidentTrackers.MICROPHONE_MUTED.recordFailure();
+        }
+      };
+      audioTrack.addEventListener("mute", this.handleAudioTrackMute);
+
+      this.handleAudioTrackUnmute = () => {
+        if (!this.isDestroyed && !this.isTerminated) {
+          this.incidentTrackers.MICROPHONE_MUTED.recordPass();
+        }
+      };
+      audioTrack.addEventListener("unmute", this.handleAudioTrackUnmute);
+
+      this.micStatus = "Connected";
+      this.audioMonitoringStatus = "Active (Silence)";
+    } catch (err) {
+      console.warn("Failed to initialize Web Audio proctoring:", err);
+    }
+  }
+
+  /**
+   * Audio Analysis: Evaluates RMS volume and human voice band (300Hz-3400Hz)
+   */
+  analyzeAudioStream() {
+    if (!this.audioStream || !this.audioAnalyser) {
+      return {
+        speechDetected: false,
+        loudNoise: false,
+        rms: 0,
+        voiceEnergyRatio: 0,
+        status: "inactive",
+      };
+    }
+
+    const audioTrack = this.audioStream.getAudioTracks()[0];
+    if (!audioTrack || audioTrack.readyState === "ended") {
+      this.micStatus = "Disconnected";
+      this.audioMonitoringStatus = "Disconnected";
+      this.incidentTrackers.MICROPHONE_DISCONNECTED.recordFailure();
+      return { speechDetected: false, loudNoise: false, rms: 0, status: "disconnected" };
+    }
+    this.incidentTrackers.MICROPHONE_DISCONNECTED.recordPass();
+
+    if (audioTrack.muted || !audioTrack.enabled) {
+      this.micStatus = "Muted";
+      this.audioMonitoringStatus = "Muted";
+      this.incidentTrackers.MICROPHONE_MUTED.recordFailure();
+      return { speechDetected: false, loudNoise: false, rms: 0, status: "muted" };
+    }
+    this.incidentTrackers.MICROPHONE_MUTED.recordPass();
+    this.micStatus = "Connected";
+
+    if (this.audioContext && this.audioContext.state === "suspended") {
+      this.audioContext.resume().catch(() => {});
+    }
+
+    // Time domain analysis for overall RMS loudness
+    const bufferLength = this.audioAnalyser.fftSize;
+    const timeData = new Uint8Array(bufferLength);
+    this.audioAnalyser.getByteTimeDomainData(timeData);
+
+    let sumSquares = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const val = (timeData[i] - 128) / 128;
+      sumSquares += val * val;
+    }
+    const rms = Math.sqrt(sumSquares / bufferLength);
+    this.audioLevel = Math.min(100, Math.round(rms * 150));
+
+    // Frequency domain analysis for human voice band (300Hz - 3400Hz)
+    const freqBins = this.audioAnalyser.frequencyBinCount;
+    const freqData = new Uint8Array(freqBins);
+    this.audioAnalyser.getByteFrequencyData(freqData);
+
+    const sampleRate = this.audioContext ? this.audioContext.sampleRate : 44100;
+    const binResolution = sampleRate / this.audioAnalyser.fftSize;
+    const speechStartBin = Math.max(1, Math.floor(300 / binResolution));
+    const speechEndBin = Math.min(freqBins - 1, Math.ceil(3400 / binResolution));
+
+    let speechEnergy = 0;
+    let totalEnergy = 0;
+    for (let i = 0; i < freqBins; i++) {
+      totalEnergy += freqData[i];
+      if (i >= speechStartBin && i <= speechEndBin) {
+        speechEnergy += freqData[i];
+      }
+    }
+    const voiceEnergyRatio = totalEnergy > 0 ? speechEnergy / totalEnergy : 0;
+
+    // Classification criteria
+    const speechDetected = rms >= 0.08 && voiceEnergyRatio >= 0.40;
+    const loudNoise = rms >= 0.65;
+
+    if (speechDetected) {
+      this.incidentTrackers.BACKGROUND_SPEECH.recordFailure({ rms, voiceEnergyRatio });
+      this.incidentTrackers.EXCESSIVE_NOISE.recordPass();
+      this.audioMonitoringStatus = "Active (Voice Detected)";
+    } else if (loudNoise) {
+      this.incidentTrackers.EXCESSIVE_NOISE.recordFailure({ rms });
+      this.incidentTrackers.BACKGROUND_SPEECH.recordPass();
+      this.audioMonitoringStatus = "Active (Noise Detected)";
+    } else {
+      this.incidentTrackers.BACKGROUND_SPEECH.recordPass();
+      this.incidentTrackers.EXCESSIVE_NOISE.recordPass();
+      this.audioMonitoringStatus = "Active (Silence)";
+    }
+
+    return {
+      speechDetected,
+      loudNoise,
+      rms: Math.round(rms * 100) / 100,
+      voiceEnergyRatio: Math.round(voiceEnergyRatio * 100) / 100,
+      status: this.audioMonitoringStatus,
+    };
   }
 
   /**
@@ -514,7 +798,6 @@ export class ProctoringEngine {
       }
     }
 
-    // Optical fallback analyzer
     return ProctoringEngine.detectFaceOptical(videoElement, this.canvasElement);
   }
 
@@ -572,10 +855,7 @@ export class ProctoringEngine {
     );
     const stdDev = Math.sqrt(variance);
 
-    // Reliable Black Screen Classification:
-    // 1. Pitch dark (covered camera, lens blocked, tape, black cloth) -> meanLuminance < 8
-    // 2. Solid uniform surface with almost zero spatial texture -> stdDev < 3.2 and (meanLuminance < 25 || meanLuminance > 235)
-    // Dark room with face and monitor has meanLuminance > 15 and stdDev > 8, so it is NOT flagged.
+    // Reliable Black Screen Classification
     const isBlackScreen =
       meanLuminance < 8 ||
       (stdDev < 3.2 && (meanLuminance < 25 || meanLuminance > 235));
@@ -610,7 +890,7 @@ export class ProctoringEngine {
   /**
    * Start live proctoring monitoring session with continuous 3-second checks
    */
-  async startMonitoring(videoElement = null, existingStream = null) {
+  async startMonitoring(videoElement = null, existingStream = null, audioStream = null) {
     this.monitoringStartedAt = Date.now();
     this.startupGraceUntil = Date.now() + 10000; // 10-second startup grace period
 
@@ -629,6 +909,15 @@ export class ProctoringEngine {
 
     if (videoElement) {
       this.attachVideoElement(videoElement);
+    }
+
+    // Audio stream monitoring initialization
+    const effectiveAudioStream =
+      audioStream ||
+      (this.stream?.getAudioTracks().length > 0 ? this.stream : null);
+
+    if (effectiveAudioStream) {
+      this.initAudioMonitoring(effectiveAudioStream);
     }
 
     this.canvasElement = document.createElement("canvas");
@@ -780,8 +1069,7 @@ export class ProctoringEngine {
   }
 
   /**
-   * Continuous Camera & Face Check executed every 3 seconds
-   * Evaluates all 8 independent requirements.
+   * Continuous Camera, Audio & Face Check executed every 3 seconds
    */
   async runCameraAndFaceCheck() {
     if (this.isDestroyed || this.isTerminated) return;
@@ -793,6 +1081,9 @@ export class ProctoringEngine {
     });
 
     const isStartupGrace = Date.now() < this.startupGraceUntil;
+
+    // Run independent Audio Analysis check
+    this.analyzeAudioStream();
 
     // 1. Is camera stream available?
     if (!this.stream) {
@@ -868,7 +1159,6 @@ export class ProctoringEngine {
     const frameQuality = this.analyzeVideoFrameQuality(this.videoElement);
     if (frameQuality.isBlackScreen) {
       this.incidentTrackers.BLACK_SCREEN.recordFailure(frameQuality);
-      // Suppress face absence counting while black screen is active (black screen is root cause)
       this.incidentTrackers.FACE_NOT_DETECTED.recordPass();
       this.incidentTrackers.MULTIPLE_FACES.recordPass();
 
@@ -881,7 +1171,6 @@ export class ProctoringEngine {
       });
       return;
     }
-    // Normal usable frame - resolve black screen incident
     this.incidentTrackers.BLACK_SCREEN.recordPass();
 
     // 7 & 8. Face detection check (0 faces, 1 face, multiple faces)
@@ -910,7 +1199,6 @@ export class ProctoringEngine {
         frameQuality,
       });
     } else {
-      // Multiple faces detected
       this.incidentTrackers.MULTIPLE_FACES.recordFailure(faceResult);
       this.incidentTrackers.FACE_NOT_DETECTED.recordPass();
 
@@ -928,7 +1216,6 @@ export class ProctoringEngine {
    * Handle when a violation condition is resolved by candidate
    */
   handleIncidentResolved(code) {
-    // Notify UI that active warning can be cleared if matching
     this.onStatusChange({
       status: this.proctoringStatus,
       warningCount: this.warningCount,
@@ -940,9 +1227,17 @@ export class ProctoringEngine {
 
   /**
    * Centralized Violation Recording Function (Violation State Machine)
+   * Implements Sequential Warnings 1 -> 2 -> 3 with visible 3-second countdown
    */
   async recordViolation({ code, baseDescription, category, metadata = {} }) {
-    if (this.isDestroyed || this.isTerminated || this.isProcessingViolation) return;
+    if (
+      this.isDestroyed ||
+      this.isTerminated ||
+      this.isProcessingViolation ||
+      this.isCountingDown
+    ) {
+      return;
+    }
 
     // Suppress violations during the 10-second startup grace period
     if (Date.now() < this.startupGraceUntil) {
@@ -965,13 +1260,26 @@ export class ProctoringEngine {
         categoryType = "multiple_faces_or_device";
       }
 
+      // Requirement: Precise Sequential Warnings
       let formattedMessage = "";
       if (currentWarningNum === 1) {
-        formattedMessage = `Warning 1/3: ${baseDescription}. Navigating away or rule infractions are prohibited.`;
+        if (code === "BACKGROUND_SPEECH") {
+          formattedMessage = "Background voice detected. Please maintain examination silence.";
+        } else if (code === "EXCESSIVE_NOISE") {
+          formattedMessage = "Excessive ambient noise detected. Please ensure a quiet examination environment.";
+        } else {
+          formattedMessage = `First examination rule violation detected. Please follow all examination instructions. One warning has been recorded. (${baseDescription})`;
+        }
       } else if (currentWarningNum === 2) {
-        formattedMessage = `Warning 2/3 (FINAL WARNING): ${baseDescription}. One more violation will automatically terminate your examination.`;
+        if (code === "BACKGROUND_SPEECH") {
+          formattedMessage = "Repeated background voice detected. This is your final warning.";
+        } else if (code === "EXCESSIVE_NOISE") {
+          formattedMessage = "Repeated excessive noise detected. This is your final warning.";
+        } else {
+          formattedMessage = `A second examination rule violation has been detected. This is your final warning before examination termination. (${baseDescription})`;
+        }
       } else {
-        formattedMessage = `Warning 3/3 (MAXIMUM VIOLATIONS REACHED): ${baseDescription}. Examination is automatically terminated.`;
+        formattedMessage = `Your third examination violation has been detected. Your examination will be automatically terminated in 3 seconds.`;
       }
 
       const violationRecord = {
@@ -991,12 +1299,6 @@ export class ProctoringEngine {
 
       this.violationHistory.push(violationRecord);
 
-      if (currentWarningNum >= this.maxWarnings) {
-        this.isFlagged = true;
-        this.isTerminated = true;
-        this.proctoringStatus = "terminated";
-      }
-
       const warningPayload = {
         warningCount: currentWarningNum,
         warningNumber: currentWarningNum,
@@ -1005,6 +1307,7 @@ export class ProctoringEngine {
         isTerminated: currentWarningNum >= this.maxWarnings,
         code,
         message: formattedMessage,
+        rawDescription: baseDescription,
         isFlagged: this.isFlagged,
         timestamp: violationRecord.timestamp,
         violationHistory: [...this.violationHistory],
@@ -1016,23 +1319,51 @@ export class ProctoringEngine {
         status: this.proctoringStatus,
         warningCount: currentWarningNum,
         isFlagged: this.isFlagged,
-        isTerminated: this.isTerminated,
+        isTerminated: currentWarningNum >= this.maxWarnings,
       });
 
-      // 3rd VIOLATION: IMMEDIATE AUTOMATIC TERMINATION
+      // 3RD VIOLATION: VISIBLE 3-SECOND COUNTDOWN THEN AUTOMATIC TERMINATION
       if (currentWarningNum >= this.maxWarnings) {
-        const currentAnswers = this.getAnswers ? this.getAnswers() : {};
+        this.isFlagged = true;
+        this.isTerminated = true;
+        this.proctoringStatus = "terminated";
+        this.isCountingDown = true;
 
-        this.onTerminated({
+        let secondsRemaining = 3;
+        this.onCountdownTick({
+          secondsRemaining: 3,
+          formattedMessage,
           violationRecord,
           violationHistory: [...this.violationHistory],
-          answers: currentAnswers,
-          attemptId: this.attemptId,
-          formattedMessage,
-          categoryType,
         });
 
-        this.destroy();
+        this.countdownTimer = setInterval(() => {
+          secondsRemaining--;
+          this.onCountdownTick({
+            secondsRemaining,
+            formattedMessage,
+            violationRecord,
+            violationHistory: [...this.violationHistory],
+          });
+
+          if (secondsRemaining <= 0) {
+            clearInterval(this.countdownTimer);
+            this.countdownTimer = null;
+
+            const currentAnswers = this.getAnswers ? this.getAnswers() : {};
+            this.onTerminated({
+              violationRecord,
+              violationHistory: [...this.violationHistory],
+              answers: currentAnswers,
+              attemptId: this.attemptId,
+              formattedMessage,
+              categoryType,
+            });
+
+            this.destroy();
+          }
+        }, 1000);
+
         return;
       }
 
@@ -1073,6 +1404,9 @@ export class ProctoringEngine {
       faceStatus: stats.faceStatus || "Checking...",
       faceStatusCode: stats.faceStatusCode || "normal",
       faceCount: stats.faceCount ?? 1,
+      micStatus: this.micStatus || "Connected",
+      audioMonitoringStatus: this.audioMonitoringStatus || "Active (Silence)",
+      audioLevel: this.audioLevel || 0,
       lastCheckTime: this.lastCheckTimestamp || "Running...",
       monitoringInterval: "3 Seconds",
       violationCount: this.warningCount,
@@ -1116,10 +1450,15 @@ export class ProctoringEngine {
   }
 
   /**
-   * Cleanly stop camera, timer, and event listeners
+   * Cleanly stop camera, microphone, timer, and event listeners
    */
   destroy() {
     this.isDestroyed = true;
+
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
 
     if (this.checkTimer) {
       clearTimeout(this.checkTimer);
@@ -1131,14 +1470,24 @@ export class ProctoringEngine {
       this.heartbeatTimer = null;
     }
 
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch {}
+      this.audioContext = null;
+    }
+
+    if (this.audioStream) {
+      try {
+        this.audioStream.getTracks().forEach((track) => track.stop());
+      } catch {}
+      this.audioStream = null;
+    }
+
     if (this.stream) {
       try {
-        this.stream.getTracks().forEach((track) => {
-          track.stop();
-        });
-      } catch {
-        // Stream stopped
-      }
+        this.stream.getTracks().forEach((track) => track.stop());
+      } catch {}
       this.stream = null;
     }
 

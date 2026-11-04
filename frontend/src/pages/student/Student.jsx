@@ -353,7 +353,7 @@ export function StudentDashboard() {
         />
         <Stat
           icon={GraduationCap}
-          label="Enrolled Courses"
+          label="Registered Courses"
           value={enrolledCourses.length}
           tone="purple"
           delta="Active access"
@@ -378,7 +378,7 @@ export function StudentDashboard() {
         {/* Enrolled Courses */}
         <section className="panel">
           <div className="panel-head">
-            <h3>My Enrolled Courses</h3>
+            <h3>My Registered & Enrolled Courses</h3>
             <Link className="action-link" to="/student/courses">
               View all ({enrolledCourses.length}) <ArrowUpRight size={14} />
             </Link>
@@ -390,26 +390,30 @@ export function StudentDashboard() {
                   <BookOpen size={20} />
                 </div>
                 <div>
-                  <strong>{c.name || c.title}</strong>
+                  <strong>{c.name || c.title || c.courseName}</strong>
                   <small>
-                    Instructor: {c.teacherName || "Faculty"} · {c.durationDays || 180} days access ·{" "}
+                    {c.teacherName ? `Instructor: ${c.teacherName} · ` : ""}
+                    {c.durationDays || 180} days access ·{" "}
                     Enrolled {new Date(c.enrolledAt).toLocaleDateString("en-IN")}
                   </small>
                 </div>
-                <Link className="btn btn-soft small" to="/student/explore">
-                  Practice <ArrowUpRight size={14} />
+                <Link className="btn btn-soft small" to={`/take/${c.primaryExamId || c.courseId || c.id}`}>
+                  Start Exam <ArrowUpRight size={14} />
                 </Link>
               </div>
             ))
           ) : (
             <div style={{ padding: "20px 0" }}>
               <Empty
-                title="No enrolled courses yet"
-                text="Browse our course catalog and enroll using your wallet balance."
+                title="No registered courses yet"
+                text="Browse our exams catalog to register for free or enroll using your wallet."
               />
-              <div style={{ textAlign: "center", marginTop: 12 }}>
-                <Link to="/student/browse" className="btn btn-primary small">
-                  Browse Courses Now
+              <div style={{ textAlign: "center", marginTop: 12, display: "flex", gap: 10, justifyContent: "center" }}>
+                <Link to="/student/explore" className="btn btn-primary small">
+                  Explore Free Exams
+                </Link>
+                <Link to="/student/browse" className="btn btn-outline small">
+                  Browse Courses
                 </Link>
               </div>
             </div>
@@ -535,13 +539,18 @@ export function MyCourses() {
 
   return (
     <Shell
-      title="My Enrolled Courses"
-      kicker="ACADEMIC ENROLLMENTS"
-      description="All courses unlocked through your Meritx student wallet."
+      title="My Registered Courses"
+      kicker="ACADEMIC ENROLLMENTS & REGISTRATIONS"
+      description="All courses and examinations unlocked or registered under your Meritx account."
       action={
-        <Link to="/student/browse" className="btn btn-primary small">
-          <Plus size={16} /> Browse New Courses
-        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link to="/student/explore" className="btn btn-outline small">
+            Explore Free Exams <ArrowUpRight size={15} />
+          </Link>
+          <Link to="/student/browse" className="btn btn-primary small">
+            <Plus size={16} /> Browse New Courses
+          </Link>
+        </div>
       }
     >
       {error && <div className="alert error">{error}</div>}
@@ -553,6 +562,8 @@ export function MyCourses() {
             const targetExamId =
               course.primaryExamId ||
               course.linkedExams?.[0]?.id ||
+              course.courseId ||
+              course.id ||
               (course.slug?.includes("neet")
                 ? "neet-01"
                 : course.slug?.includes("advanced")
@@ -560,6 +571,7 @@ export function MyCourses() {
                   : "jee-main-01");
             const tests = course.linkedExams || [];
             const primaryTest = tests[0];
+            const isFree = course.feePaid === 0 || course.paymentMethod === "free";
 
             return (
               <article className="course-catalog-card" key={course.enrollmentId || course.id}>
@@ -575,9 +587,9 @@ export function MyCourses() {
                 <div className="course-card-body">
                   <div className="course-card-tags">
                     <span className="course-tag-category">{course.category || "Preparation"}</span>
-                    <span className="tag green">Active Access</span>
+                    <span className="tag green">{isFree ? "Free Registration" : "Active Access"}</span>
                   </div>
-                  <h3>{course.name || course.title}</h3>
+                  <h3>{course.name || course.title || course.courseName}</h3>
                   <p className="course-desc">
                     {course.shortDescription || course.fullDescription || "Comprehensive curriculum and mock tests."}
                   </p>
@@ -614,9 +626,9 @@ export function MyCourses() {
 
                   <div className="course-card-footer">
                     <div>
-                      <small className="muted">PAID VIA WALLET</small>
+                      <small className="muted">{isFree ? "REGISTRATION" : "PAID VIA WALLET"}</small>
                       <strong style={{ display: "block", color: "#10b981", fontSize: 16 }}>
-                        {money(course.feePaid || course.amountPaid || course.effectivePrice || 0)}
+                        {isFree ? "FREE" : money(course.feePaid || course.amountPaid || course.effectivePrice || 0)}
                       </strong>
                     </div>
                     <Link
@@ -635,13 +647,18 @@ export function MyCourses() {
       ) : (
         <div className="panel" style={{ textAlign: "center", padding: "60px 20px" }}>
           <BookOpen size={48} color="#94a3b8" style={{ margin: "0 auto 16px" }} />
-          <h3>No Enrolled Courses Yet</h3>
+          <h3>No Registered Courses Yet</h3>
           <p className="muted" style={{ maxWidth: 440, margin: "0 auto 20px" }}>
-            You have not enrolled in any courses yet. Explore our published courses and enroll instantly using your student wallet.
+            You have not registered for any examinations or enrolled in any courses yet. Explore our free examinations or browse our published courses to get started.
           </p>
-          <Link to="/student/browse" className="btn btn-primary">
-            Explore Course Catalog <ArrowUpRight size={16} />
-          </Link>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+            <Link to="/student/explore" className="btn btn-primary">
+              Register for Free Exams <ArrowUpRight size={16} />
+            </Link>
+            <Link to="/student/browse" className="btn btn-outline">
+              Explore Course Catalog <ArrowUpRight size={16} />
+            </Link>
+          </div>
         </div>
       )}
     </Shell>

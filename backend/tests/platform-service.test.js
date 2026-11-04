@@ -56,3 +56,27 @@ test('a zero exam catalog price makes a linked course exam free', async () => {
   assert.equal(exam.fee, 0);
   assert.equal(exam.tag, 'Free');
 });
+
+test('listStudentCourses includes free registered exams for the student', async () => {
+  const db = {
+    async query(sql) {
+      if (sql.includes('FROM exam_overrides')) return { rows: [] };
+      if (sql.includes('FROM published_exams')) return { rows: [] };
+      if (sql.includes('FROM courses')) return { rows: [] };
+      if (sql.includes('FROM course_enrollments')) return { rows: [] };
+      if (sql.includes('FROM registrations')) {
+        return {
+          rows: [
+            { id: 'reg-1', student_id: 'std-1', exam_id: 'jee-advanced-01', status: 'confirmed', created_at: new Date() }
+          ]
+        };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const service = createPlatformService(db);
+  const courses = await service.listStudentCourses('std-1');
+  assert.equal(courses.length, 1);
+  assert.equal(courses[0].primaryExamId, 'jee-advanced-01');
+  assert.equal(courses[0].paymentMethod, 'free');
+});

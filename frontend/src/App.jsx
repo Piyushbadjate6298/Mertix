@@ -86,58 +86,187 @@ export default function App() {
           <Route path="/register" element={<Auth register />} />
 
           {/* Student Routes */}
-          <Route path="/student" element={protect("student", StudentDashboard)} />
-          <Route path="/student/courses" element={protect("student", MyCourses)} />
-          <Route path="/student/browse" element={protect("student", BrowseCourses)} />
-          <Route path="/student/wallet" element={protect("student", MyWallet)} />
-          <Route path="/student/deposit" element={protect("student", AddMoney)} />
-          <Route path="/student/withdraw" element={protect("student", WithdrawMoney)} />
-          <Route path="/student/deposits" element={protect("student", DepositHistory)} />
-          <Route path="/student/transactions" element={protect("student", TransactionHistory)} />
-          <Route path="/student/profile" element={protect("student", StudentProfile)} />
-          <Route path="/student/explore" element={protect("student", DashboardExplore)} />
-          <Route path="/student/results" element={protect("student", Results)} />
-          <Route path="/student/rewards" element={protect("student", MyWallet)} />
-          <Route path="/student/support" element={protect("student", Support)} />
+          <Route
+            path="/student"
+            element={protect("student", StudentDashboard)}
+          />
+          <Route
+            path="/student/courses"
+            element={protect("student", MyCourses)}
+          />
+          <Route
+            path="/student/browse"
+            element={protect("student", BrowseCourses)}
+          />
+          <Route
+            path="/student/wallet"
+            element={protect("student", MyWallet)}
+          />
+          <Route
+            path="/student/deposit"
+            element={protect("student", AddMoney)}
+          />
+          <Route
+            path="/student/withdraw"
+            element={protect("student", WithdrawMoney)}
+          />
+          <Route
+            path="/student/deposits"
+            element={protect("student", DepositHistory)}
+          />
+          <Route
+            path="/student/transactions"
+            element={protect("student", TransactionHistory)}
+          />
+          <Route
+            path="/student/profile"
+            element={protect("student", StudentProfile)}
+          />
+          <Route
+            path="/student/explore"
+            element={protect("student", DashboardExplore)}
+          />
+          <Route
+            path="/student/results"
+            element={protect("student", Results)}
+          />
+          <Route
+            path="/student/rewards"
+            element={protect("student", MyWallet)}
+          />
+          <Route
+            path="/student/support"
+            element={protect("student", Support)}
+          />
           <Route path="/take/:id" element={protect("student", Exam)} />
 
           {/* Teacher Routes */}
-          <Route path="/teacher" element={protect("teacher", TeacherDashboard)} />
-          <Route path="/teacher/courses" element={protect("teacher", TeacherCourses)} />
-          <Route path="/teacher/profile" element={protect("teacher", TeacherProfile)} />
-          <Route path="/teacher/explore" element={protect("teacher", DashboardExplore)} />
-          <Route path="/teacher/papers" element={protect("teacher", PaperBuilder)} />
-          <Route path="/teacher/questions" element={protect("teacher", QuestionBank)} />
-          <Route path="/teacher/import" element={protect("teacher", ImportQuestionBank)} />
+          <Route
+            path="/teacher"
+            element={protect("teacher", TeacherDashboard)}
+          />
+          <Route
+            path="/teacher/courses"
+            element={protect("teacher", TeacherCourses)}
+          />
+          <Route
+            path="/teacher/profile"
+            element={protect("teacher", TeacherProfile)}
+          />
+          <Route
+            path="/teacher/explore"
+            element={protect("teacher", DashboardExplore)}
+          />
+          <Route
+            path="/teacher/papers"
+            element={protect("teacher", PaperBuilder)}
+          />
+          <Route
+            path="/teacher/questions"
+            element={protect("teacher", QuestionBank)}
+          />
+          <Route
+            path="/teacher/import"
+            element={protect("teacher", ImportQuestionBank)}
+          />
 
           {/* Admin Routes */}
           <Route path="/admin" element={protect("admin", AdminDashboard)} />
-          <Route path="/admin/finance" element={protect("admin", FinanceDashboard)} />
-          <Route path="/admin/proctoring" element={protect("admin", LiveProctoringDashboard)} />
-          <Route path="/admin/wallets" element={protect("admin", StudentWalletManagement)} />
-          <Route path="/admin/withdrawals" element={protect("admin", WithdrawalManagement)} />
-          <Route path="/admin/reports" element={protect("admin", FinancialReports)} />
-          <Route path="/admin/explore" element={protect("admin", DashboardExplore)} />
+          <Route
+            path="/admin/finance"
+            element={protect("admin", FinanceDashboard)}
+          />
+          <Route
+            path="/admin/proctoring"
+            element={protect("admin", LiveProctoringDashboard)}
+          />
+          <Route
+            path="/admin/wallets"
+            element={protect("admin", StudentWalletManagement)}
+          />
+          <Route
+            path="/admin/withdrawals"
+            element={protect("admin", WithdrawalManagement)}
+          />
+          <Route
+            path="/admin/reports"
+            element={protect("admin", FinancialReports)}
+          />
+          <Route
+            path="/admin/explore"
+            element={protect("admin", DashboardExplore)}
+          />
           <Route path="/admin/exams" element={protect("admin", ManageExams)} />
-          <Route path="/admin/prizes" element={protect("admin", PrizeManagement)} />
-          <Route path="/admin/students" element={protect("admin", ManageStudents)} />
-          <Route path="/admin/papers" element={protect("admin", ManagePapers)} />
-          <Route path="/admin/question-banks" element={protect("admin", ManageQuestionBanks)} />
-          <Route path="/admin/import" element={protect("admin", ImportQuestionBank)} />
-          <Route path="/admin/support" element={protect("admin", ManageSupport)} />
-          <Route path="/admin/courses" element={protect("admin", ManageCourses)} />
-          <Route path="/admin/configuration" element={protect("admin", PlatformConfiguration)} />
+          <Route
+            path="/admin/prizes"
+            element={protect("admin", PrizeManagement)}
+          />
+          <Route
+            path="/admin/students"
+            element={protect("admin", ManageStudents)}
+          />
+          <Route
+            path="/admin/papers"
+            element={protect("admin", ManagePapers)}
+          />
+          <Route
+            path="/admin/question-banks"
+            element={protect("admin", ManageQuestionBanks)}
+          />
+          <Route
+            path="/admin/import"
+            element={protect("admin", ImportQuestionBank)}
+          />
+          <Route
+            path="/admin/support"
+            element={protect("admin", ManageSupport)}
+          />
+          <Route
+            path="/admin/courses"
+            element={protect("admin", ManageCourses)}
+          />
+          <Route
+            path="/admin/configuration"
+            element={protect("admin", PlatformConfiguration)}
+          />
 
           {/* Superadmin Routes */}
-          <Route path="/superadmin" element={protect("superadmin", FinanceDashboard)} />
-          <Route path="/superadmin/finance" element={protect("superadmin", FinanceDashboard)} />
-          <Route path="/superadmin/proctoring" element={protect("superadmin", LiveProctoringDashboard)} />
-          <Route path="/superadmin/wallets" element={protect("superadmin", StudentWalletManagement)} />
-          <Route path="/superadmin/withdrawals" element={protect("superadmin", WithdrawalManagement)} />
-          <Route path="/superadmin/reports" element={protect("superadmin", FinancialReports)} />
-          <Route path="/superadmin/explore" element={protect("superadmin", DashboardExplore)} />
-          <Route path="/superadmin/payments" element={protect("superadmin", Transactions)} />
-          <Route path="/superadmin/audit" element={protect("superadmin", Audit)} />
+          <Route
+            path="/superadmin"
+            element={protect("superadmin", FinanceDashboard)}
+          />
+          <Route
+            path="/superadmin/finance"
+            element={protect("superadmin", FinanceDashboard)}
+          />
+          <Route
+            path="/superadmin/proctoring"
+            element={protect("superadmin", LiveProctoringDashboard)}
+          />
+          <Route
+            path="/superadmin/wallets"
+            element={protect("superadmin", StudentWalletManagement)}
+          />
+          <Route
+            path="/superadmin/withdrawals"
+            element={protect("superadmin", WithdrawalManagement)}
+          />
+          <Route
+            path="/superadmin/reports"
+            element={protect("superadmin", FinancialReports)}
+          />
+          <Route
+            path="/superadmin/explore"
+            element={protect("superadmin", DashboardExplore)}
+          />
+          <Route
+            path="/superadmin/payments"
+            element={protect("superadmin", Transactions)}
+          />
+          <Route
+            path="/superadmin/audit"
+            element={protect("superadmin", Audit)}
+          />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
